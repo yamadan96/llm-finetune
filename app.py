@@ -24,16 +24,11 @@ except Exception as e:
 
 
 def respond(
-    message: str, history: list[list[str | None]], system_prompt: str
+    message: str, history: list[dict], system_prompt: str
 ) -> str:
     if init_error:
         return f"initialization error: {init_error}"
-    messages = []
-    for user_msg, assistant_msg in history:
-        if user_msg:
-            messages.append({"role": "user", "content": user_msg})
-        if assistant_msg:
-            messages.append({"role": "assistant", "content": assistant_msg})
+    messages = [m for m in history if m["role"] in ("user", "assistant")]
     messages.append({"role": "user", "content": message})
     return predictor.chat(messages, system=system_prompt)
 
