@@ -6,13 +6,19 @@ Core idea: For a pre-trained weight W ∈ R^(d×k), represent the update as:
     W + ΔW = W + BA  where B ∈ R^(d×r), A ∈ R^(r×k), r << min(d, k)
 Forward pass: h = Wx + BAx * (alpha / rank)
 """
+
+import json
 import logging
 import math
+from pathlib import Path
+from typing import Any
 
 import torch
 import torch.nn as nn
 
 logger = logging.getLogger(__name__)
+
+LORA_CONFIG_FILENAME = "lora_config.json"
 
 
 class LoRALinear(nn.Module):
@@ -40,11 +46,14 @@ class LoRALinear(nn.Module):
         self.out_features = linear.out_features
 
         # LoRA matrices: A ∈ R^(r×k), B ∈ R^(d×r)
-        self.lora_A = nn.Parameter(torch.empty(rank, linear.in_features))
-        self.lora_B = nn.Parameter(torch.zeros(linear.out_features, rank))
-        self.lora_dropout = (
-            nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
+        # Kept in float32 on the same device as the frozen weight, so the
+        # adapter trains in full precision even when the base model is bf16.
+        device = linear.weight.device
+        self.lora_A = nn.Parameter(torch.empty(rank, linear.in_features, device=device))
+        self.lora_B = nn.Parameter(
+            torch.zeros(linear.out_features, rank, device=device)
         )
+        self.lora_dropout = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
 
         self._init_lora_weights()
 
@@ -56,9 +65,10 @@ class LoRALinear(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Original linear path (frozen)
         result = nn.functional.linear(x, self.weight, self.bias)
-        # LoRA path: x → dropout → A → B → scale
-        lora_out = self.lora_dropout(x) @ self.lora_A.T @ self.lora_B.T
-        return result + lora_out * self.scaling
+        # LoRA path: x → dropout → A → B → scale (computed in the adapter dtype)
+        lora_x = self.lora_dropout(x).to(self.lora_A.dtype)
+        lora_out = lora_x @ self.lora_A.T @ self.lora_B.T
+        return result + (lora_out * self.scaling).to(result.dtype)
 
 
 def apply_lora(
@@ -74,10 +84,12 @@ def apply_lora(
         param.requires_grad = False
 
     replaced = 0
-    for name, module in model.named_modules():
+    # Materialize the list first: the loop below mutates the module tree
+    for name, module in list(model.named_modules()):
         if not isinstance(module, nn.Linear):
             continue
-        if not any(name.endswith(t) for t in target_modules):
+        # Match whole name components only ("q_proj" must not match "kq_proj")
+        if not any(name == t or name.endswith("." + t) for t in target_modules):
             continue
 
         # Navigate to parent and replace
@@ -104,17 +116,17 @@ def get_lora_params(model: nn.Module) -> list[nn.Parameter]:
 
 
 def save_lora_weights(model: nn.Module, path: str) -> None:
-    """Save only LoRA adapter weights."""
+    """Save only LoRA adapter weights (as detached CPU tensors)."""
     lora_state = {
-        n: p for n, p in model.named_parameters() if "lora_A" in n or "lora_B" in n
+        n: p.detach().cpu()
+        for n, p in model.named_parameters()
+        if "lora_A" in n or "lora_B" in n
     }
     torch.save(lora_state, path)
     logger.info("Saved LoRA weights to %s (%d tensors)", path, len(lora_state))
 
 
-def load_lora_weights(
-    model: nn.Module, path: str, device: str = "cpu"
-) -> nn.Module:
+def load_lora_weights(model: nn.Module, path: str, device: str = "cpu") -> nn.Module:
     """Load LoRA adapter weights into model."""
     state = torch.load(path, map_location=device, weights_only=True)
     missing, unexpected = model.load_state_dict(state, strict=False)
@@ -123,3 +135,32 @@ def load_lora_weights(
         logger.warning("Missing LoRA keys: %s", lora_missing)
     logger.info("Loaded LoRA weights from %s", path)
     return model
+
+
+def save_lora_config(
+    path: str | Path,
+    *,
+    rank: int,
+    alpha: float,
+    dropout: float,
+    target_modules: list[str],
+    base_model_id: str,
+) -> None:
+    """Save the adapter hyperparameters needed to rebuild the LoRA model."""
+    config = {
+        "rank": rank,
+        "alpha": alpha,
+        "dropout": dropout,
+        "target_modules": list(target_modules),
+        "base_model_id": base_model_id,
+    }
+    Path(path).write_text(json.dumps(config, indent=2), encoding="utf-8")
+    logger.info("Saved LoRA config to %s", path)
+
+
+def load_lora_config(path: str | Path) -> dict[str, Any] | None:
+    """Load a saved LoRA config, or return None if the file does not exist."""
+    config_path = Path(path)
+    if not config_path.exists():
+        return None
+    return json.loads(config_path.read_text(encoding="utf-8"))
