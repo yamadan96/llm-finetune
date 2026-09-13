@@ -1,4 +1,5 @@
 """Japanese instruction dataset for LoRA fine-tuning."""
+
 import logging
 
 import torch
@@ -12,9 +13,7 @@ DEFAULT_DATASET = "kunishou/databricks-dolly-15k-ja"
 SYSTEM_PROMPT = "あなたは親切なアシスタントです。"
 
 
-def format_chatml(
-    instruction: str, response: str, system: str = SYSTEM_PROMPT
-) -> str:
+def format_chatml(instruction: str, response: str, system: str = SYSTEM_PROMPT) -> str:
     """Format as ChatML template used by Qwen2.5."""
     return (
         f"<|im_start|>system\n{system}<|im_end|>\n"

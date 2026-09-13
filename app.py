@@ -1,4 +1,5 @@
 """Gradio chat UI for LoRA fine-tuned Qwen2.5-7B-Instruct."""
+
 import logging
 import os
 from pathlib import Path
@@ -23,9 +24,7 @@ except Exception as e:
     logger.error("Failed to initialize predictor: %s", e)
 
 
-def respond(
-    message: str, history: list[dict], system_prompt: str
-) -> str:
+def respond(message: str, history: list[dict], system_prompt: str) -> str:
     if init_error:
         return f"initialization error: {init_error}"
     messages = [m for m in history if m["role"] in ("user", "assistant")]
@@ -48,9 +47,7 @@ with gr.Blocks(title="LLM LoRA Fine-tuning Demo") as demo:
         fn=respond,
         additional_inputs=[system_prompt],
         chatbot=gr.Chatbot(height=500),
-        textbox=gr.Textbox(
-            placeholder="Enter your message...", container=False
-        ),
+        textbox=gr.Textbox(placeholder="Enter your message...", container=False),
     )
 
 if __name__ == "__main__":

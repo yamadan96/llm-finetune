@@ -1,9 +1,9 @@
 """Singleton predictor for LoRA fine-tuned Qwen2.5."""
+
 import logging
 from pathlib import Path
 
 import torch
-from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 logger = logging.getLogger(__name__)
 

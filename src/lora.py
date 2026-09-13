@@ -6,6 +6,7 @@ Core idea: For a pre-trained weight W ∈ R^(d×k), represent the update as:
     W + ΔW = W + BA  where B ∈ R^(d×r), A ∈ R^(r×k), r << min(d, k)
 Forward pass: h = Wx + BAx * (alpha / rank)
 """
+
 import logging
 import math
 
@@ -42,9 +43,7 @@ class LoRALinear(nn.Module):
         # LoRA matrices: A ∈ R^(r×k), B ∈ R^(d×r)
         self.lora_A = nn.Parameter(torch.empty(rank, linear.in_features))
         self.lora_B = nn.Parameter(torch.zeros(linear.out_features, rank))
-        self.lora_dropout = (
-            nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
-        )
+        self.lora_dropout = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
 
         self._init_lora_weights()
 
@@ -112,9 +111,7 @@ def save_lora_weights(model: nn.Module, path: str) -> None:
     logger.info("Saved LoRA weights to %s (%d tensors)", path, len(lora_state))
 
 
-def load_lora_weights(
-    model: nn.Module, path: str, device: str = "cpu"
-) -> nn.Module:
+def load_lora_weights(model: nn.Module, path: str, device: str = "cpu") -> nn.Module:
     """Load LoRA adapter weights into model."""
     state = torch.load(path, map_location=device, weights_only=True)
     missing, unexpected = model.load_state_dict(state, strict=False)

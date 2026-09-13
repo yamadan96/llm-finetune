@@ -1,4 +1,5 @@
 """Training script for LoRA fine-tuning of Qwen2.5-7B-Instruct."""
+
 import argparse
 import logging
 import os
@@ -11,9 +12,7 @@ from .dataset import InstructionDataset
 from .lora import get_lora_params, save_lora_weights
 from .model import build_lora_model
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
 WANDB_PROJECT = os.environ.get("WANDB_PROJECT")
@@ -28,9 +27,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--alpha", type=float, default=32.0)
     p.add_argument("--lr", type=float, default=2e-4)
     p.add_argument("--max-length", type=int, default=512)
-    p.add_argument(
-        "--model-id", type=str, default="Qwen/Qwen2.5-7B-Instruct"
-    )
+    p.add_argument("--model-id", type=str, default="Qwen/Qwen2.5-7B-Instruct")
     return p.parse_args()
 
 
@@ -42,9 +39,7 @@ def train(args: argparse.Namespace) -> None:
 
         wandb.init(project=WANDB_PROJECT, config=vars(args))
 
-    model, tokenizer = build_lora_model(
-        args.model_id, rank=args.rank, alpha=args.alpha
-    )
+    model, tokenizer = build_lora_model(args.model_id, rank=args.rank, alpha=args.alpha)
     model.gradient_checkpointing_enable()
 
     dataset = InstructionDataset(tokenizer, max_length=args.max_length)
@@ -54,9 +49,7 @@ def train(args: argparse.Namespace) -> None:
 
     lora_params = get_lora_params(model)
     optimizer = torch.optim.AdamW(lora_params, lr=args.lr, weight_decay=0.01)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=args.epochs
-    )
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
 
     best_loss = float("inf")
     for epoch in range(1, args.epochs + 1):
@@ -80,9 +73,7 @@ def train(args: argparse.Namespace) -> None:
             total_loss += loss.item()
 
             if step % 50 == 0:
-                logger.info(
-                    "Epoch %d step %d loss=%.4f", epoch, step, loss.item()
-                )
+                logger.info("Epoch %d step %d loss=%.4f", epoch, step, loss.item())
                 if WANDB_PROJECT:
                     import wandb
 
