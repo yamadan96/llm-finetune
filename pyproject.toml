@@ -28,8 +28,11 @@ line-length = 88
 select = ["E", "W", "F", "I", "B", "UP"]
 ignore = ["E501"]
 
+[tool.uv]
+constraint-dependencies = ["torch<2.6; sys_platform == 'darwin'"]
+
 [tool.uv.sources]
-torch = { index = "pytorch-cu121" }
+torch = { index = "pytorch-cu121", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }
 torchvision = { index = "pytorch-cu121" }
 
 [[tool.uv.index]]
@@ -39,5 +42,9 @@ explicit = true
 
 [dependency-groups]
 dev = [
+    "pytest>=8.0",
     "ruff>=0.15.11",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
