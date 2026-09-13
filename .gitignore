@@ -1,4 +1,11 @@
 .venv/
 .ruff_cache/
 __pycache__/
-.venv/
+
+# AI agent / template working files (not part of the published project)
+.claude/
+.codex/
+.gemini/
+CLAUDE.md
+AGENTS.md
+GEMINI.md
