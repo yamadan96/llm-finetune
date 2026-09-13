@@ -1,5 +1,8 @@
 # LLM LoRA Fine-tuning from Scratch
 
+[![CI](https://github.com/yamadan96/llm-finetune/actions/workflows/ci.yml/badge.svg)](https://github.com/yamadan96/llm-finetune/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 **Self-implemented LoRA** applied to **Qwen2.5-7B-Instruct** for Japanese instruction fine-tuning.
 
 LoRA core (`LoRALinear`, `apply_lora`) is implemented without any PEFT library — for learning purposes.
