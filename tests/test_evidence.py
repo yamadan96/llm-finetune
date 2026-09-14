@@ -14,6 +14,31 @@ from src.evidence import (
 )
 
 
+def test_reset_peak_memory_creates_cuda_context_before_reset(monkeypatch) -> None:
+    calls: list[tuple[str, object]] = []
+    monkeypatch.setattr(evidence.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(evidence.torch.cuda, "device_count", lambda: 2)
+    monkeypatch.setattr(
+        evidence.torch,
+        "empty",
+        lambda *args, **kwargs: calls.append(("ctx", kwargs["device"])),
+    )
+    monkeypatch.setattr(
+        evidence.torch.cuda,
+        "reset_peak_memory_stats",
+        lambda index: calls.append(("reset", index)),
+    )
+
+    evidence.reset_peak_memory()
+
+    assert calls == [
+        ("ctx", "cuda:0"),
+        ("reset", 0),
+        ("ctx", "cuda:1"),
+        ("reset", 1),
+    ]
+
+
 @pytest.mark.parametrize(
     "value",
     [

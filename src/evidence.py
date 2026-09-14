@@ -165,6 +165,9 @@ def reset_peak_memory() -> None:
     if not torch.cuda.is_available():
         return
     for index in range(torch.cuda.device_count()):
+        # Resetting stats before a CUDA context exists on the device raises
+        # "Invalid device argument", so create the context first
+        torch.empty(0, device=f"cuda:{index}")
         torch.cuda.reset_peak_memory_stats(index)
 
 
