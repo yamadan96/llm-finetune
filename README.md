@@ -110,23 +110,51 @@ Run `uv run python -m src.train --help` for all options.
 
 ## Implementation Details
 
-### Label masking
+### Prompt format and label masking
 
-Each example is rendered in ChatML:
+Each dataset row (`instruction`, optional `input`, `output`) is rendered with
+Qwen2.5's ChatML chat template: one system message and one user message.
 
 ```
 <|im_start|>system\n{system}<|im_end|>\n
-<|im_start|>user\n{instruction}<|im_end|>\n
-<|im_start|>assistant\n{response}<|im_end|>
+<|im_start|>user\n{user message}<|im_end|>\n
+<|im_start|>assistant\n{output}<|im_end|>
 ```
 
+The user message is the instruction alone when `input` is empty. When `input`
+is non-empty (about 31% of `databricks-dolly-15k-ja`, e.g. the passage for
+closed QA or summarization) it is fixed as:
+
+```
+{instruction}
+
+補足情報:
+{input}
+```
+
+`scripts/inspect_masking.py` checks that this prompt is identical to
+`tokenizer.apply_chat_template` of the same messages with
+`add_generation_prompt=True`.
+
 The prompt prefix (everything up to and including `<|im_start|>assistant\n`)
-and the response (`{response}<|im_end|>`) are tokenized separately and
+and the response (`{output}<|im_end|>`) are tokenized separately and
 concatenated, so the supervision boundary is exact. Labels are `-100` for the
 prefix and for padding, so the loss covers only the assistant response,
-including the closing `<|im_end|>`. Sequences are truncated to `--max-length`;
-examples whose response is truncated away entirely are skipped, because a row
-with only `-100` labels would produce a NaN loss. See `build_example()` in
+including the closing `<|im_end|>`.
+
+Fitting into `--max-length`:
+
+1. If the prompt would leave fewer than `min(response length, max_length // 4)`
+   tokens for the response, the `input` text is shortened at a token boundary
+   and `…` is appended. Instructions themselves are never shortened.
+2. The sequence is then truncated from the end, so a long response keeps its
+   first tokens.
+3. Rows with no response token left are skipped, because a row with only
+   `-100` labels would produce a NaN loss.
+
+The counts of examples with context, shortened contexts, truncated responses
+and skipped rows are recorded in `metrics.json` (`config.train_dataset_stats`,
+`config.val_dataset_stats`). See `build_example_with_info()` in
 `src/dataset.py`.
 
 ### Gradient checkpointing with a frozen base
