@@ -40,6 +40,10 @@ GOOD_METRICS = {
 }
 GOOD_SAMPLES = {
     "model_id": "Qwen/Qwen2.5-7B-Instruct",
+    "prompts_file": "prompts/compare_ja.json",
+    "prompts_sha256": json.loads(
+        (REPO_ROOT / "prompts" / "compare_ja.contamination.json").read_text()
+    )["prompts_sha256"],
     "generation": {"max_new_tokens": 256},
     "samples": [
         {
@@ -243,3 +247,26 @@ def test_check_run_fails_when_username_is_recorded(tmp_path, monkeypatch) -> Non
 
     assert checks["evidence"].status == "FAIL"
     assert "username" in checks["evidence"].detail
+
+
+def test_check_run_prompt_overlap_requires_matching_report(tmp_path) -> None:
+    samples = copy.deepcopy(GOOD_SAMPLES)
+    assert check_run.check_prompt_overlap(samples).status == "PASS"
+
+    samples["prompts_sha256"] = "0" * 64
+    assert check_run.check_prompt_overlap(samples).status == "FAIL"
+
+    other = {**GOOD_SAMPLES, "prompts_file": "prompts/other.json"}
+    assert check_run.check_prompt_overlap(other).status == "FAIL"
+
+    (tmp_path / "prompts").mkdir()
+    (tmp_path / "prompts" / "compare_ja.contamination.json").write_text(
+        json.dumps(
+            {
+                "ok": False,
+                "prompts_sha256": GOOD_SAMPLES["prompts_sha256"],
+                "results": [{"id": "a", "ok": False}],
+            }
+        )
+    )
+    assert check_run.check_prompt_overlap(GOOD_SAMPLES, tmp_path).status == "FAIL"

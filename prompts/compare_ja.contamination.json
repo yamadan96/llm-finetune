@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "ok": true,
+  "prompts_file": "compare_ja.json",
+  "prompts_sha256": "40901689d5bfeb02fd0116c86e5be4eb81a10a35f696c9eed8d938251ac17f64",
+  "dataset_id": "kunishou/databricks-dolly-15k-ja",
+  "dataset_revision": "6391034b0126850543299cda071dc6281c31a6fb",
+  "dataset_rows": 15015,
+  "fields": [
+    "instruction",
+    "input",
+    "output",
+    "instruction+input"
+  ],
+  "normalization": "NFKC, whitespace removed",
+  "thresholds": {
+    "jaccard_char_3gram": 0.5,
+    "containment_char_3gram": 0.8,
+    "min_substring_chars": 20
+  },
+  "results": [
+    {
+      "id": "explain-lora",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.0957,
+        "row_index": "8548",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.338,
+        "row_index": "710",
+        "field": "input"
+      }
+    },
+    {
+      "id": "summarize-notice",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.0909,
+        "row_index": "104",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.1647,
+        "row_index": "8043",
+        "field": "instruction+input"
+      }
+    },
+    {
+      "id": "list-remote-focus",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.2,
+        "row_index": "6526",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.3125,
+        "row_index": "5042",
+        "field": "instruction+input"
+      }
+    },
+    {
+      "id": "rewrite-polite",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.1053,
+        "row_index": "8398",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.2075,
+        "row_index": "9545",
+        "field": "output"
+      }
+    },
+    {
+      "id": "compare-tcp-udp",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.1667,
+        "row_index": "232",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.2821,
+        "row_index": "1404",
+        "field": "instruction+input"
+      }
+    },
+    {
+      "id": "arithmetic-apples",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.0795,
+        "row_index": "4875",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.1818,
+        "row_index": "1611",
+        "field": "instruction+input"
+      }
+    },
+    {
+      "id": "classify-review",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.0889,
+        "row_index": "1175",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.1528,
+        "row_index": "5498",
+        "field": "output"
+      }
+    }
+  ]
+}

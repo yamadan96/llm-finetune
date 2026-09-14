@@ -80,9 +80,11 @@ llm-finetune/
 │   ├── compare.py   # Greedy before/after samples for a checkpoint
 │   └── predictor.py # Singleton chat predictor
 ├── scripts/
-│   ├── plot_metrics.py # Loss curve PNG from metrics.json
-│   └── check_run.py    # Pilot go/no-go check from recorded evidence
-├── prompts/         # Fixed prompt set for before/after samples
+│   ├── plot_metrics.py              # Loss curve PNG from metrics.json
+│   ├── inspect_masking.py           # Response-only masking with the real tokenizer
+│   ├── check_prompt_contamination.py # Prompt set vs. training dataset overlap
+│   └── check_run.py                 # Pilot gate (minimum conditions for a full run)
+├── prompts/         # Fixed prompt set for before/after samples + overlap report
 ├── docs/REPRODUCE.md
 ├── tests/           # CPU-only unit tests (no model/dataset downloads)
 └── app.py           # Gradio ChatInterface

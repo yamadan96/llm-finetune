@@ -73,6 +73,7 @@ run** are met; it is not a judgement of training quality.
 | `loss-decreases` | every logged train loss is finite and the mean of the last 10% of logged losses is below the first 10% |
 | `response-mask` | supervised tokens are non-zero and fewer than non-pad tokens. This is a count sanity check only; it cannot show that the boundary is in the right place |
 | `mask-boundary` | `masking_check.json` from `scripts/inspect_masking.py` passed: for real rows and the real tokenizer the ignored prefix decodes exactly to the ChatML prompt, the supervised span decodes exactly to `response<|im_end|>`, padding is ignored, and a forced truncation keeps a response prefix |
+| `prompt-overlap` | the prompt set recorded in `samples.json` has a committed contamination report (`prompts/<name>.contamination.json`) with the same SHA-256 and no flagged prompt |
 | `vram-headroom` | peak reserved VRAM is at most 90% of the GPU's total memory (WARN above) |
 | `generation` | base and fine-tuned outputs are non-empty for every prompt, which also shows the adapter checkpoint reloads (WARN for repetitive, cut-off or unchanged outputs) |
 | `evidence` | GPU, CUDA, peak VRAM, runtime, git commit, `lora_config.json` and `loss_curve.png` exist, and the artifact metadata contains no absolute local paths and not the current hostname or username (run the check on the training machine) |
@@ -191,3 +192,12 @@ re-running `src.compare` (its SHA-256 is recorded in `samples.json`).
 - `prompts/compare_ja.json`: hand-written generic instructions, not taken
   from the training dataset. `samples.json` stores its SHA-256 so a changed
   prompt set is detectable.
+- `prompts/compare_ja.contamination.json`: output of
+  `uv run python scripts/check_prompt_contamination.py --output prompts/compare_ja.contamination.json`.
+  Every prompt is compared with the `instruction`, `input`, `output` and
+  `instruction + input` fields of all dataset rows (both splits) after NFKC
+  and whitespace normalization: exact match, substring match (prompt in
+  field, field or quoted passage of at least 20 characters in the other) and
+  character 3-gram Jaccard / containment (flagged at 0.5 / 0.8). The report
+  keeps row indices and scores only. Re-run it whenever the prompt set or
+  dataset revision changes.

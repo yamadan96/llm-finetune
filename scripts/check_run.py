@@ -16,7 +16,10 @@ scripts/inspect_masking.py) and checks:
 5. vram-headroom     peak reserved VRAM leaves headroom on the GPU
 6. generation        base and fine-tuned outputs exist for every prompt, i.e.
                      the adapter was reloaded (repetitive/unchanged -> WARN)
-7. evidence          GPU, VRAM, runtime, git commit, LoRA config and loss
+7. prompt-overlap    the prompt set used by src.compare has a passing
+                     contamination report with the same SHA-256
+                     (scripts/check_prompt_contamination.py)
+8. evidence          GPU, VRAM, runtime, git commit, LoRA config and loss
                      curve are recorded, without absolute local paths, the
                      current hostname or username
 
@@ -37,6 +40,7 @@ from typing import Any
 
 from src.evidence import looks_like_local_path
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
 PASS, WARN, FAIL = "PASS", "WARN", "FAIL"
 EDGE_FRACTION = 0.1
 REPETITION_MIN_CHARS = 64
@@ -211,6 +215,36 @@ def check_generation(samples: dict[str, Any] | None) -> Check:
     )
 
 
+def check_prompt_overlap(
+    samples: dict[str, Any] | None, repo_root: Path = REPO_ROOT
+) -> Check:
+    if samples is None:
+        return Check("prompt-overlap", FAIL, "samples.json missing")
+    prompts_file = repo_root / samples.get("prompts_file", "")
+    report_path = prompts_file.with_name(f"{prompts_file.stem}.contamination.json")
+    report = _load_json(report_path) if prompts_file.suffix == ".json" else None
+    if report is None:
+        return Check(
+            "prompt-overlap",
+            FAIL,
+            f"no contamination report for {samples.get('prompts_file')}: run "
+            "scripts/check_prompt_contamination.py --output",
+        )
+    if report.get("prompts_sha256") != samples.get("prompts_sha256"):
+        return Check(
+            "prompt-overlap", FAIL, "contamination report is for a different prompt set"
+        )
+    if not report.get("ok"):
+        flagged = [r["id"] for r in report.get("results", []) if not r.get("ok")]
+        return Check("prompt-overlap", FAIL, f"overlapping prompts: {flagged}")
+    return Check(
+        "prompt-overlap",
+        PASS,
+        f"{len(report.get('results', []))} prompts checked against "
+        f"{report.get('dataset_rows')} rows of {report.get('dataset_id')}",
+    )
+
+
 def _local_paths(obj: Any) -> list[str]:
     if isinstance(obj, str):
         return [obj] if looks_like_local_path(obj) else []
@@ -310,6 +344,7 @@ def run_checks(run_dir: Path) -> list[Check]:
         check_mask_boundary(_load_json(run_dir / "masking_check.json")),
         check_vram_headroom(metrics),
         check_generation(samples),
+        check_prompt_overlap(samples),
         check_evidence(run_dir, metrics, samples),
     ]
 
