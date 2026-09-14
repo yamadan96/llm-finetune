@@ -20,7 +20,10 @@ scripts/inspect_masking.py) and checks:
                      SHA-256 matches the file in the run directory), lora_B
                      zero before and non-zero after loading
 7. generation        base and fine-tuned generation produced non-empty output
-                     for every prompt (repetitive/cut-off/unchanged -> WARN)
+                     for every prompt; WARN (never FAIL) for fine-tuned outputs
+                     with duplicate lines or looping phrases
+                     (src.text_checks), cut off at max_new_tokens, or
+                     identical to base for every prompt
 8. prompt-overlap    the prompt set used by src.compare has a passing
                      contamination report with the same SHA-256
                      (scripts/check_prompt_contamination.py)
@@ -45,13 +48,11 @@ from pathlib import Path
 from typing import Any
 
 from src.evidence import looks_like_local_path
+from src.text_checks import repetition_findings
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PASS, WARN, FAIL = "PASS", "WARN", "FAIL"
 EDGE_FRACTION = 0.1
-REPETITION_MIN_CHARS = 64
-REPETITION_NGRAM = 8
-MIN_DISTINCT_NGRAM_RATIO = 0.3
 MAX_RESERVED_VRAM_FRACTION = 0.9
 MIN_IDENTITY_LENGTH = 3
 REQUIRED_MASK_CASES = (
@@ -234,15 +235,6 @@ def check_adapter_load(run_dir: Path, samples: dict[str, Any] | None) -> Check:
     return Check("adapter-load", PASS, f"{detail}, sha256 matches {weights.name}")
 
 
-def _is_repetitive(text: str) -> bool:
-    if len(text) < REPETITION_MIN_CHARS:
-        return False
-    grams = [
-        text[i : i + REPETITION_NGRAM] for i in range(len(text) - REPETITION_NGRAM + 1)
-    ]
-    return len(set(grams)) / len(grams) < MIN_DISTINCT_NGRAM_RATIO
-
-
 def check_generation(samples: dict[str, Any] | None) -> Check:
     if samples is None:
         return Check(
@@ -260,7 +252,12 @@ def check_generation(samples: dict[str, Any] | None) -> Check:
     ]
     if empty:
         return Check("generation", FAIL, f"empty outputs: {empty}")
-    repetitive = [s["id"] for s in items if _is_repetitive(s["finetuned_output"])]
+    repetitive = [
+        f"{s['id']} ({', '.join(findings)})"
+        for s in items
+        if (findings := repetition_findings(s["finetuned_output"]))
+    ]
+    base_repetitive = [s["id"] for s in items if repetition_findings(s["base_output"])]
     cut_off = [
         s["id"]
         for s in items
@@ -269,7 +266,10 @@ def check_generation(samples: dict[str, Any] | None) -> Check:
     unchanged = all(s["finetuned_output"] == s["base_output"] for s in items)
     notes = []
     if repetitive:
-        notes.append(f"repetitive: {repetitive}")
+        base_note = (
+            f"; base also repetitive: {base_repetitive}" if base_repetitive else ""
+        )
+        notes.append(f"repetitive fine-tuned outputs: {repetitive}{base_note}")
     if cut_off:
         notes.append(f"cut off at max_new_tokens: {cut_off}")
     if unchanged:

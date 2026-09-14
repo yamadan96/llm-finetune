@@ -184,6 +184,32 @@ def test_check_run_requires_samples(tmp_path) -> None:
     assert _statuses(run)["generation"] == "FAIL"
 
 
+def test_check_run_warns_on_duplicate_lines_but_not_fail(tmp_path) -> None:
+    samples = copy.deepcopy(GOOD_SAMPLES)
+    samples["samples"][0]["finetuned_output"] = (
+        "1. 朝のルーチンを確立する\n2. 朝のルーチンを確立する"
+    )
+    run = _run_dir(tmp_path, samples=samples)
+
+    checks = {c.name: c for c in check_run.run_checks(run)}
+
+    assert checks["generation"].status == "WARN"
+    assert "duplicate lines" in checks["generation"].detail
+    assert check_run.main([str(run)]) == 0
+
+
+def test_check_run_notes_repetitive_base_outputs(tmp_path) -> None:
+    samples = copy.deepcopy(GOOD_SAMPLES)
+    samples["samples"][0]["finetuned_output"] = "- 同じ行です\n- 同じ行です"
+    samples["samples"][0]["base_output"] = "- 基準の行です\n- 基準の行です"
+
+    checks = {
+        c.name: c for c in check_run.run_checks(_run_dir(tmp_path, samples=samples))
+    }
+
+    assert "base also repetitive: ['a']" in checks["generation"].detail
+
+
 def test_check_run_warns_on_degenerate_generation(tmp_path) -> None:
     samples = copy.deepcopy(GOOD_SAMPLES)
     samples["samples"][0]["finetuned_output"] = "同じ文です。" * 30
