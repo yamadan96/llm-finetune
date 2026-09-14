@@ -42,6 +42,8 @@ explicit = true
 
 [dependency-groups]
 dev = [
+    # Only used by scripts/plot_metrics.py, not by training
+    "matplotlib>=3.9",
     "pytest>=8.0",
     "ruff>=0.15.11",
 ]

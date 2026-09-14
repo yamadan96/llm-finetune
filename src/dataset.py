@@ -2,7 +2,7 @@
 
 import logging
 import random
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 import torch
@@ -88,6 +88,25 @@ def split_indices(
     return sorted(indices[num_val:]), sorted(indices[:num_val])
 
 
+def limit_indices(
+    indices: Sequence[int], max_samples: int | None, seed: int
+) -> list[int]:
+    """Deterministically keep at most ``max_samples`` of ``indices``.
+
+    The indices are shuffled with ``random.Random(seed)`` and the first
+    ``max_samples`` are kept (returned sorted). The result depends only on the
+    input indices, ``max_samples`` and ``seed``; ``None`` keeps every index.
+    Increasing ``max_samples`` keeps a superset of a smaller limit.
+    """
+    kept = list(indices)
+    if max_samples is None:
+        return sorted(kept)
+    if max_samples < 1:
+        raise ValueError(f"max_samples must be >= 1, got {max_samples}")
+    random.Random(seed).shuffle(kept)
+    return sorted(kept[:max_samples])
+
+
 class InstructionDataset(Dataset):  # pyright: ignore[reportMissingTypeArgument]
     """Tokenized instruction dataset in ChatML format."""
 
@@ -131,13 +150,24 @@ def load_instruction_datasets(
     val_ratio: float = 0.02,
     seed: int = 42,
     split: str = "train",
+    max_train_samples: int | None = None,
+    max_val_samples: int | None = None,
 ) -> tuple[InstructionDataset, InstructionDataset]:
-    """Load the raw dataset and build seeded train/validation datasets."""
+    """Load the raw dataset and build seeded train/validation datasets.
+
+    ``max_train_samples`` / ``max_val_samples`` cap the number of raw rows taken
+    from each split *after* the seeded split (see ``limit_indices``), so the
+    validation rows of a pilot run are always a subset of the full run's
+    validation rows. Rows skipped during tokenization (empty or fully
+    truncated) are not replaced, so the final dataset can be slightly smaller.
+    """
     # datasets>=4 no longer supports loading scripts or `trust_remote_code`
     raw = load_dataset(dataset_id, split=split)
     logger.info("Loaded %d examples from %s", len(raw), dataset_id)
 
     train_idx, val_idx = split_indices(len(raw), val_ratio, seed)
+    train_idx = limit_indices(train_idx, max_train_samples, seed)
+    val_idx = limit_indices(val_idx, max_val_samples, seed)
     train_set = InstructionDataset(tokenizer, raw.select(train_idx), max_length)
     val_set = InstructionDataset(tokenizer, raw.select(val_idx), max_length)
     logger.info("Split: %d train / %d validation", len(train_set), len(val_set))

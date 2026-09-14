@@ -1,7 +1,6 @@
 """Training script for LoRA fine-tuning of Qwen2.5-7B-Instruct."""
 
 import argparse
-import json
 import logging
 import math
 import os
@@ -16,7 +15,8 @@ from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 from transformers import get_cosine_schedule_with_warmup
 
-from .dataset import IGNORE_INDEX, load_instruction_datasets
+from .dataset import DEFAULT_DATASET, IGNORE_INDEX, load_instruction_datasets
+from .evidence import RunTracker, public_identifier
 from .lora import (
     LORA_CONFIG_FILENAME,
     get_lora_params,
@@ -36,6 +36,14 @@ logger = logging.getLogger(__name__)
 WANDB_PROJECT = os.environ.get("WANDB_PROJECT")
 CHECKPOINT_DIR = Path(os.environ.get("CHECKPOINT_DIR", "checkpoints"))
 METRICS_FILENAME = "metrics.json"
+
+
+def positive_int(value: str) -> int:
+    """argparse type for integers >= 1."""
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"must be >= 1, got {value}")
+    return number
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -61,6 +69,32 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--model-id", type=str, default="Qwen/Qwen2.5-7B-Instruct")
+    p.add_argument(
+        "--dataset-id",
+        type=str,
+        default=DEFAULT_DATASET,
+        help="Hugging Face Hub dataset id",
+    )
+    p.add_argument(
+        "--max-train-samples",
+        type=positive_int,
+        default=None,
+        help="Use at most N raw training rows, chosen deterministically from "
+        "--seed after the train/validation split (default: all)",
+    )
+    p.add_argument(
+        "--max-val-samples",
+        type=positive_int,
+        default=None,
+        help="Use at most N raw validation rows, chosen the same way (default: all)",
+    )
+    p.add_argument(
+        "--log-every",
+        type=positive_int,
+        default=10,
+        help="Record the mean train loss and LR every N optimizer steps "
+        "(metrics.json train_loss_steps)",
+    )
     return p.parse_args(argv)
 
 
@@ -104,12 +138,41 @@ def evaluate(model: torch.nn.Module, loader: DataLoader) -> float:
     return total_loss / total_tokens if total_tokens else float("nan")
 
 
-def write_metrics(path: Path, metrics: dict[str, Any]) -> None:
-    path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+def run_config(args: argparse.Namespace) -> dict[str, Any]:
+    """Run config for metrics.json: CLI args with shareable model/dataset ids."""
+    return {
+        **vars(args),
+        "model_id": public_identifier(args.model_id),
+        "dataset_id": public_identifier(args.dataset_id),
+        "target_modules": LORA_TARGET_MODULES,
+    }
+
+
+def count_tokens(batch: dict[str, torch.Tensor]) -> tuple[int, int]:
+    """(supervised tokens covered by the shifted causal-LM loss, non-pad tokens)."""
+    supervised = int((batch["labels"][:, 1:] != IGNORE_INDEX).sum().item())
+    non_pad = int(batch["attention_mask"].sum().item())
+    return supervised, non_pad
 
 
 def train(args: argparse.Namespace) -> None:
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+    tracker = RunTracker(
+        CHECKPOINT_DIR / METRICS_FILENAME,
+        config=run_config(args),
+        log_every=args.log_every,
+    )
+    try:
+        run_training(args, tracker)
+    except BaseException as exc:
+        status = "interrupted" if isinstance(exc, KeyboardInterrupt) else "failed"
+        # Only the exception type: messages may contain local paths
+        tracker.finish(status, error=type(exc).__name__)
+        raise
+    tracker.finish("completed")
+
+
+def run_training(args: argparse.Namespace, tracker: RunTracker) -> None:
     seed_everything(args.seed)
 
     if WANDB_PROJECT:
@@ -128,9 +191,12 @@ def train(args: argparse.Namespace) -> None:
 
     train_set, val_set = load_instruction_datasets(
         tokenizer,
+        dataset_id=args.dataset_id,
         max_length=args.max_length,
         val_ratio=args.val_ratio,
         seed=args.seed,
+        max_train_samples=args.max_train_samples,
+        max_val_samples=args.max_val_samples,
     )
     if len(train_set) == 0:
         raise ValueError("Training set is empty")
@@ -154,59 +220,64 @@ def train(args: argparse.Namespace) -> None:
     num_training_steps = len(loader) * args.epochs
     scheduler = build_scheduler(optimizer, num_training_steps, args.warmup_ratio)
 
-    metrics: dict[str, Any] = {
-        "config": {
-            **vars(args),
-            "target_modules": LORA_TARGET_MODULES,
-            "num_train_examples": len(train_set),
-            "num_val_examples": len(val_set),
-            "num_training_steps": num_training_steps,
-            "num_warmup_steps": math.ceil(num_training_steps * args.warmup_ratio),
-        },
-        "epochs": [],
-        "best": None,
-    }
-    metrics_path = CHECKPOINT_DIR / METRICS_FILENAME
+    tracker.update_config(
+        num_train_examples=len(train_set),
+        num_val_examples=len(val_set),
+        num_training_steps=num_training_steps,
+        num_warmup_steps=math.ceil(num_training_steps * args.warmup_ratio),
+        num_trainable_params=sum(p.numel() for p in lora_params),
+    )
+    tracker.start_training()
 
     best_loss = float("inf")
-    global_step = 0
     for epoch in range(1, args.epochs + 1):
         model.train()
+        tracker.start_epoch()
         total_loss = 0.0
-        for step, batch in enumerate(loader, 1):
-            input_ids = batch["input_ids"].to(model.device)
-            attention_mask = batch["attention_mask"].to(model.device)
-            labels = batch["labels"].to(model.device)
-
+        for batch in loader:
+            supervised_tokens, input_tokens = count_tokens(batch)
             outputs = model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                labels=labels,
+                input_ids=batch["input_ids"].to(model.device),
+                attention_mask=batch["attention_mask"].to(model.device),
+                labels=batch["labels"].to(model.device),
             )
             loss = outputs.loss
             loss.backward()
             torch.nn.utils.clip_grad_norm_(lora_params, max_norm=1.0)
+            lr = scheduler.get_last_lr()[0]  # LR applied by this optimizer step
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad()
-            global_step += 1
-            total_loss += loss.item()
+            loss_value = loss.item()
+            total_loss += loss_value
 
-            if step % 50 == 0:
-                lr = scheduler.get_last_lr()[0]
+            entry = tracker.record_step(
+                epoch=epoch,
+                loss=loss_value,
+                lr=lr,
+                supervised_tokens=supervised_tokens,
+                input_tokens=input_tokens,
+            )
+            if entry is not None:
                 logger.info(
-                    "Epoch %d step %d loss=%.4f lr=%.2e", epoch, step, loss.item(), lr
+                    "Epoch %d step %d loss=%.4f lr=%.2e",
+                    epoch,
+                    entry["step"],
+                    entry["loss"],
+                    lr,
                 )
                 if WANDB_PROJECT:
                     import wandb
 
                     wandb.log(
-                        {"train/loss": loss.item(), "train/lr": lr, "epoch": epoch},
-                        step=global_step,
+                        {"train/loss": entry["loss"], "train/lr": lr, "epoch": epoch},
+                        step=entry["step"],
                     )
 
         train_loss = total_loss / len(loader)
+        tracker.end_epoch_training()
         val_loss = evaluate(model, val_loader) if val_loader is not None else None
+        global_step = tracker.optimizer_steps
         logger.info(
             "Epoch %d complete | train_loss=%.4f val_loss=%s",
             epoch,
@@ -221,15 +292,6 @@ def train(args: argparse.Namespace) -> None:
                 log["epoch/val_loss"] = val_loss
             wandb.log(log, step=global_step)
 
-        metrics["epochs"].append(
-            {
-                "epoch": epoch,
-                "step": global_step,
-                "train_loss": train_loss,
-                "val_loss": val_loss,
-            }
-        )
-
         selection_loss = val_loss if val_loss is not None else train_loss
         if selection_loss < best_loss:
             best_loss = selection_loss
@@ -243,14 +305,23 @@ def train(args: argparse.Namespace) -> None:
                 base_model_id=args.model_id,
             )
             tokenizer.save_pretrained(str(CHECKPOINT_DIR))
-            metrics["best"] = {
-                "epoch": epoch,
-                "metric": "val_loss" if val_loss is not None else "train_loss",
-                "loss": best_loss,
-            }
+            tracker.set_best(
+                {
+                    "epoch": epoch,
+                    "metric": "val_loss" if val_loss is not None else "train_loss",
+                    "loss": best_loss,
+                }
+            )
             logger.info("Saved best checkpoint (loss=%.4f)", best_loss)
 
-        write_metrics(metrics_path, metrics)
+        tracker.end_epoch(
+            {
+                "epoch": epoch,
+                "step": global_step,
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+            }
+        )
 
     if WANDB_PROJECT:
         import wandb

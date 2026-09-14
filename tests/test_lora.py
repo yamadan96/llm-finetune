@@ -1,5 +1,6 @@
 import json
 
+import pytest
 import torch
 import torch.nn as nn
 
@@ -139,3 +140,14 @@ def test_save_and_load_lora_config_round_trip(tmp_path) -> None:
 
 def test_load_lora_config_missing_file_returns_none(tmp_path) -> None:
     assert load_lora_config(tmp_path / LORA_CONFIG_FILENAME) is None
+
+
+def test_load_lora_weights_strict_rejects_missing_adapter_keys(tmp_path) -> None:
+    source = apply_lora(ToyModel(), ["q_proj"], rank=2, alpha=4.0)
+    weights_path = tmp_path / "lora_weights.pt"
+    save_lora_weights(source, str(weights_path))
+    target = apply_lora(ToyModel(), ["q_proj", "v_proj"], rank=2, alpha=4.0)
+
+    load_lora_weights(target, str(weights_path))  # non-strict only warns
+    with pytest.raises(RuntimeError, match="does not match"):
+        load_lora_weights(target, str(weights_path), strict=True)
