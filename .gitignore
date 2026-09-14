@@ -2,6 +2,12 @@
 .ruff_cache/
 __pycache__/
 
+# Training artifacts: commit metrics/plots/samples, never adapter weights
+# (see docs/REPRODUCE.md)
+checkpoints/**/*.pt
+checkpoints/**/*.tmp
+wandb/
+
 # AI agent / template working files (not part of the published project)
 .claude/
 .codex/

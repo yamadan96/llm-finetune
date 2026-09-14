@@ -55,6 +55,10 @@ CHECKPOINT_DIR=./checkpoints uv run python -m src.train \
 CHECKPOINT_DIR=./checkpoints uv run python app.py
 ```
 
+For a reproducible run that records the evidence behind a results report
+(config, GPU, runtime, peak VRAM, loss curve, before/after samples), follow
+[docs/REPRODUCE.md](docs/REPRODUCE.md): pilot run → go/no-go check → full run.
+
 ### Platform support
 
 - **Linux / Windows**: `torch` is installed from the PyTorch CUDA 12.1 index
@@ -70,9 +74,16 @@ llm-finetune/
 ├── src/
 │   ├── lora.py      # LoRALinear / apply_lora / save+load weights and config
 │   ├── model.py     # Qwen2.5-7B loading + LoRA application + checkpointing
-│   ├── dataset.py   # ChatML formatting, label masking, train/val split
+│   ├── dataset.py   # ChatML formatting, label masking, train/val split, sample limits
 │   ├── train.py     # PyTorch training loop (no Trainer)
+│   ├── evidence.py  # metrics.json: environment, runtime, peak VRAM, step losses
+│   ├── compare.py   # Greedy before/after samples for a checkpoint
 │   └── predictor.py # Singleton chat predictor
+├── scripts/
+│   ├── plot_metrics.py # Loss curve PNG from metrics.json
+│   └── check_run.py    # Pilot go/no-go check from recorded evidence
+├── prompts/         # Fixed prompt set for before/after samples
+├── docs/REPRODUCE.md
 ├── tests/           # CPU-only unit tests (no model/dataset downloads)
 └── app.py           # Gradio ChatInterface
 ```
@@ -143,8 +154,10 @@ which works regardless of the transformers default.
 |---|---|
 | `lora_weights.pt` | LoRA `A`/`B` tensors of the best epoch |
 | `lora_config.json` | rank, alpha, dropout, target modules, base model id |
-| `metrics.json` | Run config and per-epoch train/validation loss (updated every epoch) |
+| `metrics.json` | Run config, environment (versions, GPU, git commit), runtime, peak VRAM, step and per-epoch losses; rewritten during training |
 | tokenizer files | Saved via `tokenizer.save_pretrained` |
+| `loss_curve.png` | `scripts/plot_metrics.py` |
+| `samples.json` / `samples.md` | `python -m src.compare` (greedy base vs. fine-tuned outputs) |
 
 `load_finetuned_model()` rebuilds the adapter from `lora_config.json`. Older
 checkpoints without that file fall back to the defaults in `src/model.py`.
@@ -166,13 +179,17 @@ Tests run on CPU without downloading models or datasets. They use a tiny
 character-level fake tokenizer and a 2-layer randomly initialized Qwen2 model,
 and cover `LoRALinear`, `apply_lora`, weight/config save-load, label masking and
 truncation, the warmup/cosine scheduler, gradient flow under gradient
-checkpointing, and a short end-to-end training run.
+checkpointing, a short end-to-end training run and its `metrics.json`
+(including that no absolute paths are recorded), deterministic sample limits,
+the loss-curve plot, the pilot check, and greedy before/after generation.
 
 ## Results
 
 Training results (loss curves, evaluation scores, sample outputs) are not yet
 published. `metrics.json` is written during training so that real curves can be
-reported once a run has been completed.
+reported once a run has been completed. The commands that produce and check
+this evidence, and which artifacts get committed, are in
+[docs/REPRODUCE.md](docs/REPRODUCE.md).
 
 ## References
 
