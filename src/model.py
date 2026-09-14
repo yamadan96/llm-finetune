@@ -12,6 +12,7 @@ from transformers import (
     PreTrainedTokenizerBase,
 )
 
+from .evidence import LOCAL_ID_PREFIX
 from .lora import (
     LORA_CONFIG_FILENAME,
     LORA_WEIGHTS_FILENAME,
@@ -96,8 +97,10 @@ def resolve_lora_settings(
     """Return ``(base model id, adapter settings)`` for a checkpoint directory.
 
     Adapter hyperparameters are read from ``lora_config.json`` when present;
-    older checkpoints without it fall back to the module defaults. The base
-    model id stored in the config takes precedence over ``model_id``.
+    older checkpoints without it fall back to the module defaults. A Hub id
+    stored in the config takes precedence over ``model_id``. A checkpoint
+    trained from a local model stores only ``local:<name>``; then ``model_id``
+    must be a path whose final component is ``<name>``.
     """
     config = load_lora_config(checkpoint_dir / LORA_CONFIG_FILENAME)
     if config is None:
@@ -108,6 +111,14 @@ def resolve_lora_settings(
         )
         config = {}
     saved_model_id = config.get("base_model_id")
+    if saved_model_id and saved_model_id.startswith(LOCAL_ID_PREFIX):
+        local_name = saved_model_id.removeprefix(LOCAL_ID_PREFIX)
+        if Path(model_id).name != local_name:
+            raise ValueError(
+                f"Checkpoint was trained on a local model ({saved_model_id}); "
+                f"pass the local model directory named '{local_name}' as model id"
+            )
+        saved_model_id = model_id
     if saved_model_id and saved_model_id != model_id:
         logger.warning(
             "Checkpoint was trained on %s (requested %s); using %s",

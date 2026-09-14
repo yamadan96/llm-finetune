@@ -141,10 +141,12 @@ git diff --cached --stat
 
 `metrics.json` and the metadata of `samples.json` never contain absolute
 paths, hostnames, usernames or environment variables; model and dataset ids
-given as local paths are stored as `local:<name>`. `lora_config.json` stores
-`--model-id` verbatim because it is used to reload the base model, so pass a
-Hugging Face Hub id (the default) for runs that will be published. The
-`evidence` check fails if any of these files contains an absolute path.
+given as local paths are stored as `local:<name>`. The same applies to
+`base_model_id` in `lora_config.json`; reloading such a checkpoint (for example
+with `src.compare`) then requires `--model-id <local model directory>`, whose
+final component must equal `<name>`. Prefer the Hugging Face Hub id (the
+default) for runs that will be published. The `evidence` check fails if any of
+these files contains an absolute path.
 
 ## 6. Where each Results item comes from
 

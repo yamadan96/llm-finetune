@@ -75,7 +75,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--model-id",
         type=str,
         default=None,
-        help="Base model id if the checkpoint has no lora_config.json "
+        help="Base model id if the checkpoint has no lora_config.json, or the "
+        "local model directory for a checkpoint saved as local:<name> "
         f"(default: {DEFAULT_BASE_MODEL})",
     )
     return p.parse_args(argv)
