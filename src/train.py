@@ -16,7 +16,7 @@ from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 from transformers import get_cosine_schedule_with_warmup
 
-from .dataset import IGNORE_INDEX, load_instruction_datasets
+from .dataset import DEFAULT_DATASET, IGNORE_INDEX, load_instruction_datasets
 from .lora import (
     LORA_CONFIG_FILENAME,
     get_lora_params,
@@ -36,6 +36,14 @@ logger = logging.getLogger(__name__)
 WANDB_PROJECT = os.environ.get("WANDB_PROJECT")
 CHECKPOINT_DIR = Path(os.environ.get("CHECKPOINT_DIR", "checkpoints"))
 METRICS_FILENAME = "metrics.json"
+
+
+def positive_int(value: str) -> int:
+    """argparse type for integers >= 1."""
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"must be >= 1, got {value}")
+    return number
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -61,6 +69,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--model-id", type=str, default="Qwen/Qwen2.5-7B-Instruct")
+    p.add_argument(
+        "--dataset-id",
+        type=str,
+        default=DEFAULT_DATASET,
+        help="Hugging Face Hub dataset id",
+    )
+    p.add_argument(
+        "--max-train-samples",
+        type=positive_int,
+        default=None,
+        help="Use at most N raw training rows, chosen deterministically from "
+        "--seed after the train/validation split (default: all)",
+    )
+    p.add_argument(
+        "--max-val-samples",
+        type=positive_int,
+        default=None,
+        help="Use at most N raw validation rows, chosen the same way (default: all)",
+    )
     return p.parse_args(argv)
 
 
@@ -128,9 +155,12 @@ def train(args: argparse.Namespace) -> None:
 
     train_set, val_set = load_instruction_datasets(
         tokenizer,
+        dataset_id=args.dataset_id,
         max_length=args.max_length,
         val_ratio=args.val_ratio,
         seed=args.seed,
+        max_train_samples=args.max_train_samples,
+        max_val_samples=args.max_val_samples,
     )
     if len(train_set) == 0:
         raise ValueError("Training set is empty")

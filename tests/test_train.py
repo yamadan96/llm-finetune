@@ -41,6 +41,15 @@ def test_parse_args_defaults() -> None:
     assert args.seed == 42
     assert args.val_ratio == 0.02
     assert args.warmup_ratio == 0.03
+    assert args.max_train_samples is None
+    assert args.max_val_samples is None
+    assert args.dataset_id == "kunishou/databricks-dolly-15k-ja"
+
+
+@pytest.mark.parametrize("value", ["0", "-5"])
+def test_parse_args_rejects_non_positive_sample_limits(value: str) -> None:
+    with pytest.raises(SystemExit):
+        parse_args(["--max-train-samples", value])
 
 
 def test_seed_everything_makes_dataloader_order_reproducible() -> None:
@@ -67,7 +76,15 @@ def test_train_smoke_writes_best_checkpoint_config_and_metrics(
         apply_lora(model, target_modules, rank=rank, alpha=alpha, dropout=dropout)
         return model, fake_tokenizer
 
-    def fake_load_datasets(tokenizer, max_length, val_ratio, seed):
+    def fake_load_datasets(
+        tokenizer,
+        dataset_id,
+        max_length,
+        val_ratio,
+        seed,
+        max_train_samples,
+        max_val_samples,
+    ):
         return (
             InstructionDataset(tokenizer, rows[:6], max_length),
             InstructionDataset(tokenizer, rows[6:], max_length),
