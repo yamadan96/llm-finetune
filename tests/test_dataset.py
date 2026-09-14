@@ -3,14 +3,21 @@ import pytest
 
 import src.dataset as dataset_module
 from src.dataset import (
+    CONTEXT_HEADER,
+    CONTEXT_TRUNCATION_MARK,
     IGNORE_INDEX,
+    ExampleInfo,
     InstructionDataset,
     build_example,
+    build_example_with_info,
+    chat_messages,
     format_chatml,
     format_prompt_prefix,
     format_response,
+    format_user_message,
     limit_indices,
     load_instruction_datasets,
+    response_token_reserve,
     split_indices,
 )
 from tests.conftest import PAD_ID, SPECIAL_TOKENS
@@ -197,3 +204,193 @@ def test_load_instruction_datasets_respects_sample_limits(
     # Limits are applied after the split: subsets of the full splits
     assert all(x in ids(full_train) for x in ids(train_a))
     assert all(x in ids(full_val) for x in ids(val_a))
+
+
+# --- Context (dataset "input" field) formatting and masking regressions -----
+
+CTX_MAX_LENGTH = 160
+
+
+def _supervised(example) -> tuple[int, int]:
+    positions = (example["labels"] != IGNORE_INDEX).nonzero().flatten().tolist()
+    assert positions == list(range(positions[0], positions[-1] + 1))
+    return positions[0], positions[-1] + 1
+
+
+def _check_masking(tokenizer, example, prefix: str, response_text: str) -> None:
+    """Prefix fully ignored, supervised span == response tokens, pads ignored."""
+    ids = example["input_ids"].tolist()
+    labels = example["labels"].tolist()
+    mask = example["attention_mask"].tolist()
+    start, end = _supervised(example)
+    assert tokenizer.decode(ids[:start]) == prefix
+    assert labels[:start] == [IGNORE_INDEX] * start
+    assert labels[start:end] == ids[start:end]
+    expected = tokenizer(format_response(response_text), add_special_tokens=False)
+    assert ids[start:end] == expected["input_ids"][: end - start]
+    assert all(
+        labels[i] == IGNORE_INDEX and ids[i] == PAD_ID
+        for i, m in enumerate(mask)
+        if m == 0
+    )
+
+
+def test_format_user_message_without_and_with_context() -> None:
+    assert format_user_message("質問", "") == "質問"
+    assert format_user_message("質問", "  \n") == "質問"
+    assert format_user_message("要約して", " 本文 ") == "要約して\n\n補足情報:\n本文"
+    assert format_prompt_prefix("要約して", context="本文") == (
+        "<|im_start|>system\nあなたは親切なアシスタントです。<|im_end|>\n"
+        "<|im_start|>user\n要約して\n\n補足情報:\n本文<|im_end|>\n"
+        "<|im_start|>assistant\n"
+    )
+    assert chat_messages("要約して", "本文")[1] == {
+        "role": "user",
+        "content": "要約して\n\n補足情報:\n本文",
+    }
+
+
+def test_masking_without_context(reversible_tokenizer) -> None:
+    built = build_example_with_info(reversible_tokenizer, "質問", "回答です。", 96)
+
+    assert built is not None
+    example, info = built
+    assert info == ExampleInfo("", context_truncated=False, response_truncated=False)
+    _check_masking(
+        reversible_tokenizer, example, format_prompt_prefix("質問"), "回答です。"
+    )
+    assert CONTEXT_HEADER not in reversible_tokenizer.decode(example["input_ids"])
+
+
+def test_masking_with_context_puts_input_in_user_message(reversible_tokenizer) -> None:
+    built = build_example_with_info(
+        reversible_tokenizer, "要約して", "要約。", 96, context="元の文章"
+    )
+
+    assert built is not None
+    example, info = built
+    prefix = format_prompt_prefix("要約して", context="元の文章")
+    assert info.context_used == "元の文章" and not info.context_truncated
+    _check_masking(reversible_tokenizer, example, prefix, "要約。")
+    assert "補足情報:\n元の文章<|im_end|>" in reversible_tokenizer.decode(
+        example["input_ids"]
+    )
+
+
+def test_masking_with_long_context_truncates_context_not_response(
+    reversible_tokenizer,
+) -> None:
+    context = "とても長い参考文章。" * 50
+    response = "短い要約。"
+
+    built = build_example_with_info(
+        reversible_tokenizer, "要約して", response, CTX_MAX_LENGTH, context=context
+    )
+
+    assert built is not None
+    example, info = built
+    assert info.context_truncated and not info.response_truncated
+    assert info.context_used.endswith(CONTEXT_TRUNCATION_MARK)
+    assert context.startswith(info.context_used.removesuffix(CONTEXT_TRUNCATION_MARK))
+    prefix = format_prompt_prefix("要約して", context=info.context_used)
+    _check_masking(reversible_tokenizer, example, prefix, response)
+    # The whole response (including <|im_end|>) is still supervised
+    start, end = _supervised(example)
+    assert reversible_tokenizer.decode(example["input_ids"][start:end]) == (
+        format_response(response)
+    )
+    assert int(example["attention_mask"].sum()) <= CTX_MAX_LENGTH
+
+
+def test_masking_with_long_context_and_long_output_keeps_response_reserve(
+    reversible_tokenizer,
+) -> None:
+    response = "詳しい回答" * 80
+
+    built = build_example_with_info(
+        reversible_tokenizer,
+        "要約して",
+        response,
+        CTX_MAX_LENGTH,
+        context="参考文章。" * 80,
+    )
+
+    assert built is not None
+    example, info = built
+    assert info.context_truncated and info.response_truncated
+    start, end = _supervised(example)
+    assert end == CTX_MAX_LENGTH
+    assert end - start >= response_token_reserve(len(response) + 1, CTX_MAX_LENGTH)
+    prefix = format_prompt_prefix("要約して", context=info.context_used)
+    _check_masking(reversible_tokenizer, example, prefix, response)
+
+
+def test_masking_with_short_output(reversible_tokenizer) -> None:
+    built = build_example_with_info(
+        reversible_tokenizer,
+        "はいかいいえで答えて",
+        "はい",
+        CTX_MAX_LENGTH,
+        context="文",
+    )
+
+    assert built is not None
+    example, info = built
+    start, end = _supervised(example)
+    assert end - start == len("はい") + 1  # response chars + <|im_end|>
+    assert example["labels"][end - 1] == IM_END
+    _check_masking(
+        reversible_tokenizer,
+        example,
+        format_prompt_prefix("はいかいいえで答えて", context="文"),
+        "はい",
+    )
+
+
+def test_masking_with_long_output_without_context(reversible_tokenizer) -> None:
+    response = "長い回答" * 100
+
+    built = build_example_with_info(reversible_tokenizer, "説明して", response, 96)
+
+    assert built is not None
+    example, info = built
+    assert info.response_truncated and not info.context_truncated
+    start, end = _supervised(example)
+    assert start == len(
+        reversible_tokenizer(format_prompt_prefix("説明して"))["input_ids"]
+    )
+    assert end == 96
+    assert example["labels"][end - 1] != IM_END
+    _check_masking(
+        reversible_tokenizer, example, format_prompt_prefix("説明して"), response
+    )
+
+
+def test_long_instruction_without_context_is_skipped(reversible_tokenizer) -> None:
+    assert build_example(reversible_tokenizer, "長い指示" * 40, "a", 96) is None
+
+
+def test_instruction_dataset_uses_input_field_and_reports_stats(
+    reversible_tokenizer,
+) -> None:
+    rows = [
+        {"instruction": "q", "input": "", "output": "a"},
+        {"instruction": "要約して", "input": "本文", "output": "要約"},
+        {"instruction": "要約して", "input": "長い本文。" * 60, "output": "要約"},
+        {"instruction": "説明して", "input": None, "output": "回答" * 100},
+        {"instruction": "", "input": "x", "output": "a"},
+        {"instruction": "長い指示" * 60, "input": "", "output": "a"},
+    ]
+
+    dataset = InstructionDataset(reversible_tokenizer, rows, max_length=CTX_MAX_LENGTH)
+
+    assert dataset.stats() == {
+        "examples": 4,
+        "with_context": 2,
+        "context_truncated": 1,
+        "response_truncated": 1,
+        "skipped_empty": 1,
+        "skipped_truncated": 1,
+    }
+    decoded = reversible_tokenizer.decode(dataset[1]["input_ids"])
+    assert "補足情報:\n本文<|im_end|>" in decoded

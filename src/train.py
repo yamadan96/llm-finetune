@@ -223,6 +223,8 @@ def run_training(args: argparse.Namespace, tracker: RunTracker) -> None:
     tracker.update_config(
         num_train_examples=len(train_set),
         num_val_examples=len(val_set),
+        train_dataset_stats=train_set.stats(),
+        val_dataset_stats=val_set.stats(),
         num_training_steps=num_training_steps,
         num_warmup_steps=math.ceil(num_training_steps * args.warmup_ratio),
         num_trainable_params=sum(p.numel() for p in lora_params),

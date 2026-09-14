@@ -81,3 +81,37 @@ def build_tiny_causal_lm(seed: int = 0) -> Qwen2ForCausalLM:
 @pytest.fixture
 def tiny_model() -> Qwen2ForCausalLM:
     return build_tiny_causal_lm()
+
+
+class ReversibleTokenizer:
+    """Character tokenizer whose ``decode`` is the exact inverse of encoding."""
+
+    pad_token_id = PAD_ID
+    eos_token_id = SPECIAL_TOKENS["<|im_end|>"]
+    chat_template = None
+    offset = 10
+
+    def __call__(
+        self, text: str, add_special_tokens: bool = True
+    ) -> dict[str, list[int]]:
+        ids: list[int] = []
+        pos = 0
+        for match in _SPECIAL_RE.finditer(text):
+            ids += [self.offset + ord(c) for c in text[pos : match.start()]]
+            ids.append(SPECIAL_TOKENS[match.group()])
+            pos = match.end()
+        ids += [self.offset + ord(c) for c in text[pos:]]
+        return {"input_ids": ids}
+
+    def decode(self, ids, skip_special_tokens: bool = False) -> str:
+        names = {v: k for k, v in SPECIAL_TOKENS.items()}
+        ids = ids.tolist() if hasattr(ids, "tolist") else ids
+        return "".join(
+            names[i] if i in names else "" if i == PAD_ID else chr(i - self.offset)
+            for i in ids
+        )
+
+
+@pytest.fixture
+def reversible_tokenizer() -> ReversibleTokenizer:
+    return ReversibleTokenizer()

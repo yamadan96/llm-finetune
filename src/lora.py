@@ -16,6 +16,8 @@ from typing import Any
 import torch
 import torch.nn as nn
 
+from .evidence import public_identifier
+
 logger = logging.getLogger(__name__)
 
 LORA_CONFIG_FILENAME = "lora_config.json"
@@ -159,13 +161,19 @@ def save_lora_config(
     target_modules: list[str],
     base_model_id: str,
 ) -> None:
-    """Save the adapter hyperparameters needed to rebuild the LoRA model."""
+    """Save the adapter hyperparameters needed to rebuild the LoRA model.
+
+    ``base_model_id`` is stored via ``public_identifier``: a Hub id is kept as
+    is, while a local model path is saved as ``local:<name>`` so the file can
+    be committed. Reloading such a checkpoint requires passing the local path
+    again (see ``src.model.resolve_lora_settings``).
+    """
     config = {
         "rank": rank,
         "alpha": alpha,
         "dropout": dropout,
         "target_modules": list(target_modules),
-        "base_model_id": base_model_id,
+        "base_model_id": public_identifier(base_model_id),
     }
     Path(path).write_text(json.dumps(config, indent=2), encoding="utf-8")
     logger.info("Saved LoRA config to %s", path)

@@ -1,8 +1,19 @@
+import pytest
 import torch
 
 import src.model as model_module
-from src.lora import LoRALinear, apply_lora, save_lora_config, save_lora_weights
-from src.model import enable_gradient_checkpointing, load_finetuned_model
+from src.lora import (
+    LoRALinear,
+    apply_lora,
+    load_lora_config,
+    save_lora_config,
+    save_lora_weights,
+)
+from src.model import (
+    enable_gradient_checkpointing,
+    load_finetuned_model,
+    resolve_lora_settings,
+)
 from tests.conftest import build_tiny_causal_lm
 
 
@@ -85,3 +96,42 @@ def test_load_finetuned_model_without_config_uses_defaults(
     lora_layers = [m for m in model.modules() if isinstance(m, LoRALinear)]
     assert len(lora_layers) == 4
     assert all(m.rank == model_module.LORA_RANK for m in lora_layers)
+
+
+def _save_local_checkpoint(tmp_path, local_model_path: str) -> None:
+    source = apply_lora(build_tiny_causal_lm(), ["q_proj"], rank=2, alpha=4.0)
+    save_lora_weights(source, str(tmp_path / "lora_weights.pt"))
+    save_lora_config(
+        tmp_path / "lora_config.json",
+        rank=2,
+        alpha=4.0,
+        dropout=0.0,
+        target_modules=["q_proj"],
+        base_model_id=local_model_path,
+    )
+
+
+def test_save_lora_config_stores_local_model_path_as_local_name(tmp_path) -> None:
+    local_model = tmp_path / "models" / "my-qwen"
+    local_model.mkdir(parents=True)
+
+    _save_local_checkpoint(tmp_path, str(local_model))
+
+    text = (tmp_path / "lora_config.json").read_text()
+    assert str(tmp_path) not in text
+    assert load_lora_config(tmp_path / "lora_config.json")["base_model_id"] == (
+        "local:my-qwen"
+    )
+
+
+def test_resolve_lora_settings_local_checkpoint_needs_matching_path(tmp_path) -> None:
+    local_model = tmp_path / "models" / "my-qwen"
+    local_model.mkdir(parents=True)
+    _save_local_checkpoint(tmp_path, str(local_model))
+
+    with pytest.raises(ValueError, match="local:my-qwen"):
+        resolve_lora_settings(tmp_path)  # default Hub id does not match
+
+    model_id, settings = resolve_lora_settings(tmp_path, str(local_model))
+    assert model_id == str(local_model)
+    assert settings["rank"] == 2

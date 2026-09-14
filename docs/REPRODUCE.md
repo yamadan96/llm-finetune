@@ -41,6 +41,11 @@ rows, chosen from the seeded split) with the same model, LoRA and optimizer
 settings as the full run:
 
 ```bash
+# Response-only masking with the real Qwen tokenizer on real training rows
+# (tokenizer and dataset only, no model weights; exits 1 on failure)
+uv run python scripts/inspect_masking.py --num-samples 3 \
+  --output ./checkpoints/pilot-500/masking_check.json
+
 CHECKPOINT_DIR=./checkpoints/pilot-500 uv run python -m src.train \
   --epochs 1 --batch-size 2 --rank 16 --alpha 32 \
   --max-train-samples 500 --max-val-samples 100 --log-every 10
@@ -58,40 +63,31 @@ rows (limits are applied after the split with the same `--seed`).
 
 ## 3. Pilot gate
 
-`scripts/check_run.py` exits with status 1 (NO-GO) if any check fails:
+`scripts/check_run.py` exits with status 1 (`GATE FAIL`) if any check fails.
+`GATE PASS` means only that the **minimum conditions for starting the full
+run** are met; it is not a judgement of training quality.
 
 | Check | Passes when |
 |---|---|
 | `run-completed` | `metrics.json` has `status: completed` (an OOM or crash is recorded as `failed` with the exception type) |
-| `loss-decreases` | the mean of the last 10% of logged train losses is below the first 10%, and validation loss is finite |
-| `response-mask` | supervised tokens are non-zero and fewer than non-pad tokens, i.e. prompt tokens are excluded from the loss |
-| `generation` | `samples.json` exists and every fine-tuned output is non-empty (WARN for repetitive, cut-off or unchanged outputs) |
-| `evidence` | GPU, CUDA, peak VRAM, runtime, git commit and `lora_config.json` are recorded, with no absolute local paths |
+| `loss-decreases` | every logged train loss is finite and the mean of the last 10% of logged losses is below the first 10% |
+| `response-mask` | supervised tokens are non-zero and fewer than non-pad tokens. This is a count sanity check only; it cannot show that the boundary is in the right place |
+| `mask-boundary` | `masking_check.json` from `scripts/inspect_masking.py` passed and covers real rows without `input`, with `input`, with a shortened `input` and with a truncated response (plus a forced truncation): the ignored prefix decodes exactly to the prompt and equals the tokenizer's chat template, the `input` is inside the user message, the supervised span decodes exactly to `response<|im_end|>` (or is a prefix of the response tokens), and padding is ignored |
+| `prompt-overlap` | the prompt set recorded in `samples.json` has a committed contamination report (`prompts/<name>.contamination.json`) with the same SHA-256 and no flagged prompt |
+| `vram-headroom` | peak reserved VRAM is at most 90% of the GPU's total memory (WARN above) |
+| `adapter-load` | `samples.json` → `adapter_load` shows a strict load: LoRA modules present, adapter tensor count equals the checkpoint's (two per module), no missing/unexpected keys, every adapter tensor bit-identical to `lora_weights.pt`, `lora_B` zero right after insertion and non-zero after loading, model in eval mode, and the recorded SHA-256 equals that of `lora_weights.pt` in the run directory |
+| `generation` | base generation and fine-tuned generation both produced non-empty output for all prompts (WARN for repetitive, cut-off or unchanged outputs). This does not by itself show that the adapter was loaded; that is `adapter-load` |
+| `evidence` | GPU, CUDA, peak VRAM, runtime, git commit, `lora_config.json` and `loss_curve.png` exist, and the artifact metadata contains no absolute local paths and not the current hostname or username (run the check on the training machine) |
 
-The script checks recorded evidence only. Before the full run, also:
+Proceed to the full run only if, in addition to `GATE PASS`:
 
-1. **Read `samples.md`.** The fine-tuned answers must be coherent Japanese
+1. **Every WARN has been read and judged by a person.** After 1 epoch on 500
+   rows, fine-tuned outputs identical to the base outputs are not by
+   themselves a failure.
+2. **`samples.md` has been read.** Both columns must be coherent Japanese
    responses to the prompts, not broken or repetitive text.
-2. **Inspect the loss mask on the real tokenizer** (downloads the tokenizer
-   only). The decoded supervised part must be exactly the response followed by
-   `<|im_end|>`:
-
-   ```bash
-   uv run python - <<'EOF'
-   from transformers import AutoTokenizer
-   from src.dataset import IGNORE_INDEX, build_example
-
-   tok = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct")
-   ex = build_example(tok, "日本の首都はどこですか？", "東京です。", max_length=64)
-   labels = ex["labels"]
-   print("supervised:", repr(tok.decode(labels[labels != IGNORE_INDEX])))
-   EOF
-   ```
-
-3. **Check headroom.** Compare `memory.max_memory_reserved_gib` with
-   `environment.gpus[0].total_memory_gib`. The pilot uses the same
-   `--max-length` and `--batch-size` as the full run, so the per-step memory
-   footprint should be similar.
+3. **`masking_check.json` has been looked at**, not only its `ok` flag: the
+   supervised text of each example is printed by `inspect_masking.py`.
 
 If the pilot fails, fix the cause (for example `--batch-size 1` or a smaller
 `--max-length` after an OOM) and repeat the pilot with a new `CHECKPOINT_DIR`.
@@ -109,6 +105,8 @@ uv run python scripts/plot_metrics.py ./checkpoints/full-3ep/metrics.json \
 
 CHECKPOINT_DIR=./checkpoints/full-3ep uv run python -m src.compare --max-new-tokens 256
 
+uv run python scripts/inspect_masking.py --num-samples 3 \
+  --output ./checkpoints/full-3ep/masking_check.json
 uv run python scripts/check_run.py ./checkpoints/full-3ep
 ```
 
@@ -128,6 +126,7 @@ Commit only these files per run:
 | `lora_config.json` | `src.train` | yes |
 | `loss_curve.png` | `scripts/plot_metrics.py` | yes |
 | `samples.json`, `samples.md` | `src.compare` | yes |
+| `masking_check.json` | `scripts/inspect_masking.py` | yes |
 | `lora_weights.pt` | `src.train` | no (ignored via `checkpoints/**/*.pt`) |
 | tokenizer files | `src.train` | no (a copy of the base model's tokenizer) |
 | console logs, `wandb/` | — | no (may contain machine-specific paths) |
@@ -135,16 +134,19 @@ Commit only these files per run:
 ```bash
 git add checkpoints/full-3ep/metrics.json checkpoints/full-3ep/lora_config.json \
   checkpoints/full-3ep/loss_curve.png \
-  checkpoints/full-3ep/samples.json checkpoints/full-3ep/samples.md
+  checkpoints/full-3ep/samples.json checkpoints/full-3ep/samples.md \
+  checkpoints/full-3ep/masking_check.json
 git diff --cached --stat
 ```
 
 `metrics.json` and the metadata of `samples.json` never contain absolute
 paths, hostnames, usernames or environment variables; model and dataset ids
-given as local paths are stored as `local:<name>`. `lora_config.json` stores
-`--model-id` verbatim because it is used to reload the base model, so pass a
-Hugging Face Hub id (the default) for runs that will be published. The
-`evidence` check fails if any of these files contains an absolute path.
+given as local paths are stored as `local:<name>`. The same applies to
+`base_model_id` in `lora_config.json`; reloading such a checkpoint (for example
+with `src.compare`) then requires `--model-id <local model directory>`, whose
+final component must equal `<name>`. Prefer the Hugging Face Hub id (the
+default) for runs that will be published. The `evidence` check fails if any of
+these files contains an absolute path.
 
 ## 6. Where each Results item comes from
 
@@ -155,8 +157,16 @@ Hugging Face Hub id (the default) for runs that will be published. The
 | Runtime | `metrics.json` → `runtime` (`total_seconds`, `epoch_seconds`, `optimizer_steps`, `tokens_per_second`) |
 | Peak VRAM | `metrics.json` → `memory` (`max_memory_allocated_gib`, `max_memory_reserved_gib`) |
 | Loss curve | `loss_curve.png` (from `train_loss_steps` and `epochs[].val_loss`) |
-| Before/After | `samples.md` / `samples.json` |
+| Before/After | `samples.md` / `samples.json`: all prompts of the fixed set, unedited (see below) |
 | Reproduction | the commands in this document at `environment.git_commit` |
+
+### Before/After selection rule
+
+The README shows the outputs for **every** prompt in `prompts/compare_ja.json`
+(currently 7), in file order, exactly as written to `samples.md`, including
+unchanged, cut-off or worse fine-tuned answers. Prompts are not added,
+removed or reworded after a run has been seen; a changed prompt set requires
+re-running `src.compare` (its SHA-256 is recorded in `samples.json`).
 
 ### Field definitions
 
@@ -181,5 +191,15 @@ Hugging Face Hub id (the default) for runs that will be published. The
   expected to repeat on the same GPU and software versions; bitwise equality
   across different GPUs or CUDA kernels is not guaranteed.
 - `prompts/compare_ja.json`: hand-written generic instructions, not taken
-  from the training dataset. `samples.json` stores its SHA-256 so a changed
+  from the training dataset. A prompt's optional `input` is placed in the
+  user message with the same `補足情報:` format as the training data. `samples.json` stores its SHA-256 so a changed
   prompt set is detectable.
+- `prompts/compare_ja.contamination.json`: output of
+  `uv run python scripts/check_prompt_contamination.py --output prompts/compare_ja.contamination.json`.
+  Every prompt is compared with the `instruction`, `input`, `output` and
+  `instruction + input` fields of all dataset rows (both splits) after NFKC
+  and whitespace normalization: exact match, substring match (prompt in
+  field, field or quoted passage of at least 20 characters in the other) and
+  character 3-gram Jaccard / containment (flagged at 0.5 / 0.8). The report
+  keeps row indices and scores only. Re-run it whenever the prompt set or
+  dataset revision changes.

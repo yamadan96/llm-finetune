@@ -12,6 +12,7 @@ from transformers import (
     PreTrainedTokenizerBase,
 )
 
+from .evidence import LOCAL_ID_PREFIX
 from .lora import (
     LORA_CONFIG_FILENAME,
     LORA_WEIGHTS_FILENAME,
@@ -96,8 +97,10 @@ def resolve_lora_settings(
     """Return ``(base model id, adapter settings)`` for a checkpoint directory.
 
     Adapter hyperparameters are read from ``lora_config.json`` when present;
-    older checkpoints without it fall back to the module defaults. The base
-    model id stored in the config takes precedence over ``model_id``.
+    older checkpoints without it fall back to the module defaults. A Hub id
+    stored in the config takes precedence over ``model_id``. A checkpoint
+    trained from a local model stores only ``local:<name>``; then ``model_id``
+    must be a path whose final component is ``<name>``.
     """
     config = load_lora_config(checkpoint_dir / LORA_CONFIG_FILENAME)
     if config is None:
@@ -108,6 +111,14 @@ def resolve_lora_settings(
         )
         config = {}
     saved_model_id = config.get("base_model_id")
+    if saved_model_id and saved_model_id.startswith(LOCAL_ID_PREFIX):
+        local_name = saved_model_id.removeprefix(LOCAL_ID_PREFIX)
+        if Path(model_id).name != local_name:
+            raise ValueError(
+                f"Checkpoint was trained on a local model ({saved_model_id}); "
+                f"pass the local model directory named '{local_name}' as model id"
+            )
+        saved_model_id = model_id
     if saved_model_id and saved_model_id != model_id:
         logger.warning(
             "Checkpoint was trained on %s (requested %s); using %s",
@@ -125,6 +136,32 @@ def resolve_lora_settings(
     return model_id, settings
 
 
+def insert_lora_adapters(
+    model: PreTrainedModel, settings: dict[str, Any]
+) -> PreTrainedModel:
+    """Replace the target Linear layers of a loaded base model with LoRALinear."""
+    return apply_lora(
+        model,
+        settings["target_modules"],
+        rank=settings["rank"],
+        alpha=settings["alpha"],
+        dropout=settings["dropout"],
+    )
+
+
+def load_adapter_weights(
+    model: PreTrainedModel, checkpoint_dir: Path, strict: bool = False
+) -> PreTrainedModel:
+    """Load ``lora_weights.pt`` into inserted adapters and switch to eval mode."""
+    lora_path = checkpoint_dir / LORA_WEIGHTS_FILENAME
+    if not lora_path.exists():
+        raise FileNotFoundError(f"LoRA weights not found: {lora_path}")
+    load_lora_weights(model, str(lora_path), strict=strict)
+    # Newly created LoRA modules start in training mode (dropout active)
+    model.eval()
+    return model
+
+
 def attach_lora_checkpoint(
     model: PreTrainedModel,
     checkpoint_dir: Path,
@@ -133,24 +170,17 @@ def attach_lora_checkpoint(
 ) -> PreTrainedModel:
     """Insert LoRA adapters into an already loaded base model and load weights.
 
-    Used both by ``load_finetuned_model`` and by ``src.compare``, which reuses
-    one loaded base model for before/after generation. With ``strict=True``
-    every adapter parameter must be present in the checkpoint.
+    Used by ``load_finetuned_model``; ``src.compare`` calls the two steps
+    separately so it can record the adapter state before and after loading.
+    With ``strict=True`` every adapter parameter must be present in the
+    checkpoint.
     """
-    lora_path = checkpoint_dir / LORA_WEIGHTS_FILENAME
-    if not lora_path.exists():
-        raise FileNotFoundError(f"LoRA weights not found: {lora_path}")
-    apply_lora(
-        model,
-        settings["target_modules"],
-        rank=settings["rank"],
-        alpha=settings["alpha"],
-        dropout=settings["dropout"],
-    )
-    load_lora_weights(model, str(lora_path), strict=strict)
-    # Newly created LoRA modules start in training mode (dropout active)
-    model.eval()
-    return model
+    if not (checkpoint_dir / LORA_WEIGHTS_FILENAME).exists():
+        raise FileNotFoundError(
+            f"LoRA weights not found: {checkpoint_dir / LORA_WEIGHTS_FILENAME}"
+        )
+    insert_lora_adapters(model, settings)
+    return load_adapter_weights(model, checkpoint_dir, strict=strict)
 
 
 def load_finetuned_model(

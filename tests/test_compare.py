@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import pytest
@@ -23,6 +24,11 @@ PROMPTS = {
         {"id": "p1", "instruction": "説明してください"},
         {"id": "p2", "instruction": "要約してください"},
         {"id": "p3", "instruction": "箇条書きで挙げてください"},
+        {
+            "id": "p4",
+            "instruction": "要約してください",
+            "input": "本日の会議は中止です",
+        },
     ],
 }
 
@@ -39,10 +45,10 @@ def _qwen_like_model():
 
 
 @torch.no_grad()
-def _manual_greedy(model, tokenizer, instruction: str) -> str:
-    ids = tokenizer(format_prompt_prefix(instruction), add_special_tokens=False)[
-        "input_ids"
-    ]
+def _manual_greedy(model, tokenizer, instruction: str, context: str = "") -> str:
+    ids = tokenizer(
+        format_prompt_prefix(instruction, context=context), add_special_tokens=False
+    )["input_ids"]
     input_ids = torch.tensor([ids])
     new_ids = []
     for _ in range(MAX_NEW_TOKENS):
@@ -135,7 +141,22 @@ def test_compare_writes_base_and_finetuned_samples(
     assert result["generation"]["do_sample"] is False
     assert result["generation"]["num_beams"] == 1
     assert result["generation"]["max_new_tokens"] == MAX_NEW_TOKENS
-    assert [s["id"] for s in result["samples"]] == ["p1", "p2", "p3"]
+    assert [s["id"] for s in result["samples"]] == ["p1", "p2", "p3", "p4"]
+    assert result["samples"][3]["input"] == "本日の会議は中止です"
+    assert result["samples"][0]["input"] == ""
+    adapter = result["adapter_load"]
+    assert adapter["strict"] is True
+    assert adapter["lora_modules"] == 4  # 2 layers x (q_proj, v_proj)
+    assert adapter["adapter_tensors"] == adapter["checkpoint_tensors"] == 8
+    assert adapter["missing_keys"] == adapter["unexpected_keys"] == 0
+    assert adapter["mismatched_tensors"] == 0
+    assert adapter["lora_B_norm_before_load"] == 0.0
+    assert adapter["lora_B_norm_after_load"] > 0.0
+    assert adapter["model_in_eval_mode"] is True
+    assert (
+        adapter["weights_sha256"]
+        == hashlib.sha256((checkpoint / "lora_weights.pt").read_bytes()).hexdigest()
+    )
     assert all(s["base_output"] and s["finetuned_output"] for s in result["samples"])
     assert any(s["base_output"] != s["finetuned_output"] for s in result["samples"])
 
@@ -172,10 +193,10 @@ def test_compare_is_greedy_and_matches_separate_loads(
     tuned_model.eval()
     for sample in first["samples"]:
         assert sample["base_output"] == _manual_greedy(
-            base_model, tokenizer, sample["instruction"]
+            base_model, tokenizer, sample["instruction"], sample["input"]
         )
         assert sample["finetuned_output"] == _manual_greedy(
-            tuned_model, tokenizer, sample["instruction"]
+            tuned_model, tokenizer, sample["instruction"], sample["input"]
         )
         assert sample["base_new_tokens"] == MAX_NEW_TOKENS
 
@@ -243,6 +264,11 @@ def test_render_markdown_uses_longer_fence_for_backticks() -> None:
         "lora_config_source": "defaults",
         "generation": {"max_new_tokens": 4, "repetition_penalty": 1.0},
         "environment": {"torch": "t", "transformers": "x", "gpus": None},
+        "adapter_load": {
+            "lora_modules": 2,
+            "mismatched_tensors": 0,
+            "weights_sha256": "f" * 64,
+        },
         "prompts_file": "p.json",
         "prompts_sha256": "0" * 64,
         "system_prompt": "s",
@@ -263,3 +289,25 @@ def test_render_markdown_uses_longer_fence_for_backticks() -> None:
     assert "````text\n```code```\n````" in markdown
     assert "(4 new tokens — cut off at max_new_tokens)" in markdown
     assert "(1 new tokens)" in markdown
+
+
+def test_generate_response_places_input_in_user_message(monkeypatch) -> None:
+    seen: list[list[int]] = []
+    model = build_tiny_causal_lm().eval()
+    tokenizer = FakeTokenizer()
+    real_generate = model.generate
+
+    def spy(**kwargs):
+        seen.append(kwargs["input_ids"][0].tolist())
+        return real_generate(**kwargs)
+
+    monkeypatch.setattr(model, "generate", spy)
+
+    compare_module.generate_response(
+        model, tokenizer, "要約して", generation_settings(2), "本文"
+    )
+
+    expected = tokenizer(
+        format_prompt_prefix("要約して", context="本文"), add_special_tokens=False
+    )["input_ids"]
+    assert seen == [expected]

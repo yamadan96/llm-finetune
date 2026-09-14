@@ -1,25 +1,44 @@
-"""Go/no-go gate for a pilot run before starting the full training run.
+"""Pilot gate: minimum conditions before starting the full training run.
 
 Usage:
+    uv run python scripts/inspect_masking.py --output checkpoints/<run>/masking_check.json
     uv run python scripts/check_run.py checkpoints/<run>
 
-Reads ``metrics.json`` (from src.train) and ``samples.json`` (from
-src.compare) in the run directory and checks, from the recorded evidence:
+Reads the evidence in the run directory (``metrics.json`` from src.train,
+``samples.json``/``samples.md`` from src.compare, ``loss_curve.png``,
+``lora_config.json`` and ``masking_check.json`` from
+scripts/inspect_masking.py) and checks:
 
-1. run-completed   the run finished (an OOM or crash is recorded as failed)
-2. loss-decreases  logged train loss at the end is below the start
-3. response-mask   supervised tokens are a strict, non-zero subset of tokens
-4. generation      fine-tuned outputs exist, are non-empty and not degenerate
-5. evidence        GPU, peak VRAM, runtime, git commit and LoRA config are
-                   recorded, and no absolute local paths are stored
+1. run-completed     the run finished (an OOM or crash is recorded as failed)
+2. loss-decreases    logged train losses are finite and lower at the end
+3. response-mask     supervised tokens < non-pad tokens (count sanity check)
+4. mask-boundary     the real-tokenizer masking report passed
+5. vram-headroom     peak reserved VRAM leaves headroom on the GPU
+6. adapter-load      src.compare strictly loaded the checkpoint: adapter
+                     modules present, no missing/unexpected keys, every
+                     adapter tensor bit-identical to lora_weights.pt (whose
+                     SHA-256 matches the file in the run directory), lora_B
+                     zero before and non-zero after loading
+7. generation        base and fine-tuned generation produced non-empty output
+                     for every prompt (repetitive/cut-off/unchanged -> WARN)
+8. prompt-overlap    the prompt set used by src.compare has a passing
+                     contamination report with the same SHA-256
+                     (scripts/check_prompt_contamination.py)
+9. evidence          GPU, VRAM, runtime, git commit, LoRA config and loss
+                     curve are recorded, without absolute local paths, the
+                     current hostname or username
 
-Exits with status 1 if any check FAILs. WARN items need a human look (for
-example reading samples.md) but do not block. Passing is necessary, not
-sufficient: the samples still have to be read before a full run.
+A gate PASS only means the minimum conditions for starting a full run are
+met. It is not a judgement of training quality: WARN items and samples.md
+must still be read by a person. Exits with status 1 if any check FAILs.
 """
 
 import argparse
+import getpass
+import hashlib
 import json
+import re
+import socket
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,11 +46,20 @@ from typing import Any
 
 from src.evidence import looks_like_local_path
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
 PASS, WARN, FAIL = "PASS", "WARN", "FAIL"
 EDGE_FRACTION = 0.1
 REPETITION_MIN_CHARS = 64
 REPETITION_NGRAM = 8
 MIN_DISTINCT_NGRAM_RATIO = 0.3
+MAX_RESERVED_VRAM_FRACTION = 0.9
+MIN_IDENTITY_LENGTH = 3
+REQUIRED_MASK_CASES = (
+    "no_context",
+    "with_context",
+    "context_truncated",
+    "response_truncated",
+)
 
 
 @dataclass(frozen=True)
@@ -71,6 +99,13 @@ def check_loss_decreases(metrics: dict[str, Any]) -> Check:
         for e in metrics.get("train_loss_steps", [])
         if e.get("loss") is not None
     ]
+    non_finite = [
+        e["step"] for e in metrics.get("train_loss_steps", []) if e.get("loss") is None
+    ]
+    if non_finite:
+        return Check(
+            "loss-decreases", FAIL, f"non-finite train loss at steps {non_finite[:5]}"
+        )
     if len(losses) < 2:
         return Check(
             "loss-decreases", FAIL, f"need >= 2 logged steps, got {len(losses)}"
@@ -98,10 +133,105 @@ def check_response_mask(metrics: dict[str, Any]) -> Check:
     if supervised <= 0 or total <= 0:
         return Check("response-mask", FAIL, "no supervised/input token counts")
     ratio = supervised / total
-    detail = f"supervised {supervised} / non-pad {total} tokens ({ratio:.1%})"
+    detail = (
+        f"supervised {supervised} / non-pad {total} tokens ({ratio:.1%}); "
+        "count sanity check only, boundaries are checked by mask-boundary"
+    )
     if supervised >= total:
         return Check("response-mask", FAIL, detail + ": prompt tokens are supervised")
     return Check("response-mask", PASS, detail)
+
+
+def check_mask_boundary(report: dict[str, Any] | None) -> Check:
+    if report is None:
+        return Check(
+            "mask-boundary",
+            FAIL,
+            "masking_check.json missing: run scripts/inspect_masking.py --output",
+        )
+    samples = report.get("samples", [])
+    failed = [s.get("row_index") for s in samples if not s.get("ok")]
+    if not samples or failed or not report.get("ok"):
+        return Check("mask-boundary", FAIL, f"failed samples: {failed or 'none run'}")
+    missing = sorted(set(REQUIRED_MASK_CASES) - {s.get("case") for s in samples})
+    if missing or report.get("missing_cases"):
+        return Check(
+            "mask-boundary",
+            FAIL,
+            f"cases not covered: {missing or report.get('missing_cases')} "
+            "(re-run scripts/inspect_masking.py)",
+        )
+    detail = f"{len(samples)} examples with {report.get('tokenizer')} passed"
+    if report.get("warnings"):
+        return Check(
+            "mask-boundary",
+            WARN,
+            f"{detail}; {len(report['warnings'])} warning(s), e.g. "
+            f"{report['warnings'][0]}",
+        )
+    return Check("mask-boundary", PASS, detail)
+
+
+def check_vram_headroom(metrics: dict[str, Any]) -> Check:
+    gpus = metrics.get("environment", {}).get("gpus") or []
+    reserved = metrics.get("memory", {}).get("max_memory_reserved_gib")
+    total = sum(g.get("total_memory_gib") or 0 for g in gpus)
+    if reserved is None or total <= 0:
+        return Check("vram-headroom", FAIL, "no GPU memory evidence recorded")
+    fraction = reserved / total
+    detail = f"peak reserved {reserved:.2f} / {total:.2f} GiB ({fraction:.0%})"
+    if fraction > MAX_RESERVED_VRAM_FRACTION:
+        return Check("vram-headroom", WARN, detail + ": little headroom")
+    return Check("vram-headroom", PASS, detail)
+
+
+def check_adapter_load(run_dir: Path, samples: dict[str, Any] | None) -> Check:
+    adapter = (samples or {}).get("adapter_load")
+    if adapter is None:
+        return Check(
+            "adapter-load",
+            FAIL,
+            "no adapter_load evidence in samples.json (re-run src.compare)",
+        )
+    problems = []
+    if adapter.get("strict") is not True:
+        problems.append("not loaded with strict=True")
+    modules = adapter.get("lora_modules") or 0
+    tensors = adapter.get("adapter_tensors") or 0
+    if modules <= 0:
+        problems.append("no LoRA modules")
+    if tensors != 2 * modules or adapter.get("checkpoint_tensors") != tensors:
+        problems.append(
+            f"tensor counts model={tensors} checkpoint={adapter.get('checkpoint_tensors')} "
+            f"modules={modules}"
+        )
+    for key in ("missing_keys", "unexpected_keys", "mismatched_tensors"):
+        if adapter.get(key) != 0:
+            problems.append(f"{key}={adapter.get(key)}")
+    if adapter.get("lora_B_norm_before_load") != 0:
+        problems.append("lora_B was not zero before loading")
+    if not (adapter.get("lora_B_norm_after_load") or 0) > 0:
+        problems.append("lora_B is zero after loading (adapter is a no-op)")
+    if adapter.get("model_in_eval_mode") is not True:
+        problems.append("model not in eval mode")
+    if problems:
+        return Check("adapter-load", FAIL, "; ".join(problems))
+
+    detail = f"{modules} LoRA modules, {tensors} tensors bit-identical to checkpoint"
+    weights = run_dir / adapter.get("weights_file", "lora_weights.pt")
+    if not weights.exists():
+        return Check(
+            "adapter-load",
+            WARN,
+            f"{detail}; {weights.name} absent, hash not re-checked",
+        )
+    if hashlib.sha256(weights.read_bytes()).hexdigest() != adapter.get(
+        "weights_sha256"
+    ):
+        return Check(
+            "adapter-load", FAIL, f"{weights.name} differs from the loaded file"
+        )
+    return Check("adapter-load", PASS, f"{detail}, sha256 matches {weights.name}")
 
 
 def _is_repetitive(text: str) -> bool:
@@ -122,9 +252,14 @@ def check_generation(samples: dict[str, Any] | None) -> Check:
     if not items:
         return Check("generation", FAIL, "samples.json has no samples")
     max_new = samples.get("generation", {}).get("max_new_tokens")
-    empty = [s["id"] for s in items if not s["finetuned_output"].strip()]
+    empty = [
+        f"{s['id']}:{key}"
+        for s in items
+        for key in ("base_output", "finetuned_output")
+        if not s[key].strip()
+    ]
     if empty:
-        return Check("generation", FAIL, f"empty fine-tuned outputs: {empty}")
+        return Check("generation", FAIL, f"empty outputs: {empty}")
     repetitive = [s["id"] for s in items if _is_repetitive(s["finetuned_output"])]
     cut_off = [
         s["id"]
@@ -142,7 +277,40 @@ def check_generation(samples: dict[str, Any] | None) -> Check:
     if notes:
         return Check("generation", WARN, "; ".join(notes) + " (read samples.md)")
     return Check(
-        "generation", PASS, f"{len(items)} non-empty outputs (read samples.md)"
+        "generation",
+        PASS,
+        f"{len(items)} prompts with non-empty base and fine-tuned generations "
+        "(read samples.md)",
+    )
+
+
+def check_prompt_overlap(
+    samples: dict[str, Any] | None, repo_root: Path = REPO_ROOT
+) -> Check:
+    if samples is None:
+        return Check("prompt-overlap", FAIL, "samples.json missing")
+    prompts_file = repo_root / samples.get("prompts_file", "")
+    report_path = prompts_file.with_name(f"{prompts_file.stem}.contamination.json")
+    report = _load_json(report_path) if prompts_file.suffix == ".json" else None
+    if report is None:
+        return Check(
+            "prompt-overlap",
+            FAIL,
+            f"no contamination report for {samples.get('prompts_file')}: run "
+            "scripts/check_prompt_contamination.py --output",
+        )
+    if report.get("prompts_sha256") != samples.get("prompts_sha256"):
+        return Check(
+            "prompt-overlap", FAIL, "contamination report is for a different prompt set"
+        )
+    if not report.get("ok"):
+        flagged = [r["id"] for r in report.get("results", []) if not r.get("ok")]
+        return Check("prompt-overlap", FAIL, f"overlapping prompts: {flagged}")
+    return Check(
+        "prompt-overlap",
+        PASS,
+        f"{len(report.get('results', []))} prompts checked against "
+        f"{report.get('dataset_rows')} rows of {report.get('dataset_id')}",
     )
 
 
@@ -154,6 +322,37 @@ def _local_paths(obj: Any) -> list[str]:
     if isinstance(obj, list):
         return [p for v in obj for p in _local_paths(v)]
     return []
+
+
+def _identity_leaks(texts: list[str]) -> list[str]:
+    """Current hostname/username found as whole words in artifact metadata."""
+    hostname = socket.gethostname()
+    try:
+        username = getpass.getuser()
+    except (KeyError, OSError):
+        username = ""
+    candidates = [
+        ("hostname", hostname),
+        ("hostname", hostname.split(".")[0]),
+        ("username", username),
+    ]
+    found: list[str] = []
+    for kind, value in candidates:
+        if len(value) < MIN_IDENTITY_LENGTH or kind in found:
+            continue
+        pattern = re.compile(rf"(?<![A-Za-z0-9]){re.escape(value)}(?![A-Za-z0-9])")
+        if any(pattern.search(text) for text in texts):
+            found.append(kind)
+    return found
+
+
+def _metadata_texts(run_dir: Path, artifacts: dict[str, Any]) -> list[str]:
+    """Metadata only: generated text and dataset rows may contain any word."""
+    texts = [json.dumps(value, ensure_ascii=False) for value in artifacts.values()]
+    samples_md = run_dir / "samples.md"
+    if samples_md.exists():
+        texts.append(samples_md.read_text(encoding="utf-8").split("\n## ", 1)[0])
+    return texts
 
 
 def check_evidence(
@@ -173,13 +372,23 @@ def check_evidence(
         missing.append("environment.git_commit")
     if not (run_dir / "lora_config.json").exists():
         missing.append("lora_config.json")
+    if not (run_dir / "loss_curve.png").exists():
+        missing.append("loss_curve.png")
     if missing:
         return Check("evidence", FAIL, f"missing: {', '.join(missing)}")
-    metadata = {k: v for k, v in (samples or {}).items() if k != "samples"}
-    lora_config = _load_json(run_dir / "lora_config.json") or {}
-    leaked = _local_paths(metrics) + _local_paths(metadata) + _local_paths(lora_config)
+    masking = _load_json(run_dir / "masking_check.json") or {}
+    artifacts = {
+        "metrics": metrics,
+        "samples": {k: v for k, v in (samples or {}).items() if k != "samples"},
+        "lora_config": _load_json(run_dir / "lora_config.json") or {},
+        "masking": {k: v for k, v in masking.items() if k != "samples"},
+    }
+    leaked = [p for value in artifacts.values() for p in _local_paths(value)]
     if leaked:
         return Check("evidence", FAIL, f"{len(leaked)} absolute local path value(s)")
+    identities = _identity_leaks(_metadata_texts(run_dir, artifacts))
+    if identities:
+        return Check("evidence", FAIL, f"artifacts contain the {', '.join(identities)}")
     if env.get("git_dirty") is not False:
         return Check(
             "evidence",
@@ -201,7 +410,11 @@ def run_checks(run_dir: Path) -> list[Check]:
         check_completed(metrics),
         check_loss_decreases(metrics),
         check_response_mask(metrics),
+        check_mask_boundary(_load_json(run_dir / "masking_check.json")),
+        check_vram_headroom(metrics),
+        check_adapter_load(run_dir, samples),
         check_generation(samples),
+        check_prompt_overlap(samples),
         check_evidence(run_dir, metrics, samples),
     ]
 
@@ -212,7 +425,14 @@ def main(argv: list[str] | None = None) -> int:
     for check in checks:
         print(f"[{check.status}] {check.name}: {check.detail}")
     failed = [c for c in checks if c.status == FAIL]
-    print("GO" if not failed else f"NO-GO ({len(failed)} failed)")
+    warned = [c for c in checks if c.status == WARN]
+    if failed:
+        print(f"GATE FAIL ({len(failed)} failed): do not start the full run")
+    else:
+        print(
+            "GATE PASS: minimum conditions for a full run are met "
+            f"(not a quality judgement; {len(warned)} WARN to review, read samples.md)"
+        )
     return 1 if failed else 0
 
 

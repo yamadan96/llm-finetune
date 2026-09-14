@@ -253,4 +253,7 @@ def test_train_metrics_contain_no_absolute_paths(tmp_path, smoke_run) -> None:
     text = (tmp_path / "metrics.json").read_text()
     assert str(tmp_path) not in text
     assert metrics["config"]["model_id"] == "local:tiny-qwen"
+    lora_config_text = (tmp_path / LORA_CONFIG_FILENAME).read_text()
+    assert str(tmp_path) not in lora_config_text
+    assert json.loads(lora_config_text)["base_model_id"] == "local:tiny-qwen"
     assert_no_local_details(text, metrics)
