@@ -21,17 +21,23 @@ from typing import Any
 import torch
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
-from .dataset import SYSTEM_PROMPT, format_prompt_prefix
+from .dataset import CONTEXT_HEADER, SYSTEM_PROMPT, format_prompt_prefix
 from .evidence import (
     collect_environment,
     public_identifier,
     redact_paths,
     write_json,
 )
-from .lora import LORA_CONFIG_FILENAME, LORA_WEIGHTS_FILENAME, load_lora_config
+from .lora import (
+    LORA_CONFIG_FILENAME,
+    LORA_WEIGHTS_FILENAME,
+    LoRALinear,
+    load_lora_config,
+)
 from .model import (
     DEFAULT_BASE_MODEL,
-    attach_lora_checkpoint,
+    insert_lora_adapters,
+    load_adapter_weights,
     load_base_model,
     resolve_lora_settings,
 )
@@ -93,7 +99,11 @@ def display_path(path: Path) -> str:
 
 
 def load_prompts(path: Path) -> list[dict[str, str]]:
-    """Load ``{"prompts": [{"id": ..., "instruction": ...}, ...]}``."""
+    """Load ``{"prompts": [{"id": ..., "instruction": ..., "input": ...}, ...]}``.
+
+    ``input`` is optional and is placed in the user message exactly like the
+    dataset's ``input`` field during training.
+    """
     data = json.loads(path.read_text(encoding="utf-8"))
     prompts = data.get("prompts") if isinstance(data, dict) else None
     if not prompts:
@@ -103,7 +113,10 @@ def load_prompts(path: Path) -> list[dict[str, str]]:
         raise ValueError("Every prompt needs a non-empty 'id' and 'instruction'")
     if len(set(ids)) != len(ids):
         raise ValueError("Prompt ids must be unique")
-    return [{"id": p["id"], "instruction": p["instruction"]} for p in prompts]
+    return [
+        {"id": p["id"], "instruction": p["instruction"], "input": p.get("input") or ""}
+        for p in prompts
+    ]
 
 
 def generation_settings(max_new_tokens: int) -> dict[str, Any]:
@@ -132,14 +145,14 @@ def generate_response(
     tokenizer: PreTrainedTokenizerBase,
     instruction: str,
     settings: dict[str, Any],
+    context: str = "",
 ) -> tuple[str, int]:
     """Answer one instruction with the training ChatML template.
 
     Returns the decoded response and the number of generated tokens.
     """
-    prompt_ids = tokenizer(format_prompt_prefix(instruction), add_special_tokens=False)[
-        "input_ids"
-    ]
+    prompt = format_prompt_prefix(instruction, context=context)
+    prompt_ids = tokenizer(prompt, add_special_tokens=False)["input_ids"]
     input_ids = torch.tensor([list(prompt_ids)], dtype=torch.long, device=model.device)
     pad_token_id = tokenizer.pad_token_id
     if pad_token_id is None:
@@ -166,9 +179,69 @@ def _generate_all(
     for index, prompt in enumerate(prompts, 1):
         logger.info("[%s] %d/%d %s", label, index, len(prompts), prompt["id"])
         results.append(
-            generate_response(model, tokenizer, prompt["instruction"], settings)
+            generate_response(
+                model, tokenizer, prompt["instruction"], settings, prompt["input"]
+            )
         )
     return results
+
+
+def _lora_parameters(model: torch.nn.Module) -> dict[str, torch.Tensor]:
+    return {
+        name: param
+        for name, param in model.named_parameters()
+        if "lora_A" in name or "lora_B" in name
+    }
+
+
+def _lora_b_norm(model: torch.nn.Module) -> float:
+    return float(
+        sum(
+            param.detach().float().norm().item()
+            for name, param in _lora_parameters(model).items()
+            if "lora_B" in name
+        )
+    )
+
+
+def attach_and_verify_adapter(
+    model: PreTrainedModel, checkpoint_dir: Path, settings: dict[str, Any]
+) -> dict[str, Any]:
+    """Insert and strictly load the adapter, then verify it independently.
+
+    Returns evidence for ``scripts/check_run.py``: adapter modules and tensors
+    present, no missing/unexpected keys, every adapter parameter bit-identical
+    to the checkpoint file, ``lora_B`` zero right after insertion (so the
+    loaded state did not come from initialization) and non-zero after loading,
+    and the SHA-256 of the weights file that was loaded.
+    """
+    weights_path = checkpoint_dir / LORA_WEIGHTS_FILENAME
+    insert_lora_adapters(model, settings)
+    norm_before = _lora_b_norm(model)
+    load_adapter_weights(model, checkpoint_dir, strict=True)
+
+    state = torch.load(weights_path, map_location="cpu", weights_only=True)
+    params = _lora_parameters(model)
+    mismatched = [
+        name
+        for name, param in params.items()
+        if name in state
+        and not torch.equal(param.detach().cpu().to(state[name].dtype), state[name])
+    ]
+    return {
+        "strict": True,
+        "weights_file": LORA_WEIGHTS_FILENAME,
+        "weights_sha256": hashlib.sha256(weights_path.read_bytes()).hexdigest(),
+        "lora_modules": sum(isinstance(m, LoRALinear) for m in model.modules()),
+        "adapter_tensors": len(params),
+        "checkpoint_tensors": len(state),
+        "missing_keys": len(set(params) - set(state)),
+        "unexpected_keys": len(set(state) - set(params)),
+        "mismatched_tensors": len(mismatched),
+        "lora_B_norm_before_load": norm_before,
+        "lora_B_norm_after_load": _lora_b_norm(model),
+        "model_in_eval_mode": not model.training,
+    }
 
 
 def _code_fence(text: str) -> str:
@@ -191,6 +264,7 @@ def render_markdown(result: dict[str, Any]) -> str:
     env = result["environment"]
     gpus = ", ".join(g["name"] for g in env["gpus"]) if env.get("gpus") else "none"
     max_new = gen["max_new_tokens"]
+    adapter = result["adapter_load"]
     lines = [
         "# Before/After samples",
         "",
@@ -207,6 +281,9 @@ def render_markdown(result: dict[str, Any]) -> str:
         f"- System prompt: {result['system_prompt']}",
         f"- Environment: torch {env['torch']}, transformers {env['transformers']}, "
         f"GPU {gpus}, git {env.get('git_commit') or 'unknown'}",
+        f"- Adapter load: strict, {adapter['lora_modules']} LoRA modules, "
+        f"{adapter['mismatched_tensors']} mismatched tensors, weights sha256 "
+        f"`{adapter['weights_sha256'][:12]}`",
         "",
         "Both columns come from the same loaded base model: first without the "
         "adapter, then with the LoRA weights inserted. Outputs that reached "
@@ -215,6 +292,9 @@ def render_markdown(result: dict[str, Any]) -> str:
     for index, sample in enumerate(result["samples"], 1):
         lines += ["", f"## {index}. {sample['id']}", "", "**Prompt**", ""]
         lines.append(_fenced(sample["instruction"]))
+        if sample.get("input"):
+            lines += ["", f"**{CONTEXT_HEADER.rstrip(':')}** (input)", ""]
+            lines.append(_fenced(sample["input"]))
         for key, title in (("base", "Base model"), ("finetuned", "Fine-tuned")):
             tokens = sample[f"{key}_new_tokens"]
             cut = " — cut off at max_new_tokens" if tokens >= max_new else ""
@@ -240,7 +320,7 @@ def run_compare(args: argparse.Namespace) -> dict[str, Any]:
     model, tokenizer = load_base_model(model_id)
     model.eval()
     base = _generate_all(model, tokenizer, prompts, settings, "base")
-    attach_lora_checkpoint(model, checkpoint_dir, lora_settings, strict=True)
+    adapter_load = attach_and_verify_adapter(model, checkpoint_dir, lora_settings)
     finetuned = _generate_all(model, tokenizer, prompts, settings, "fine-tuned")
 
     metadata = redact_paths(
@@ -260,6 +340,7 @@ def run_compare(args: argparse.Namespace) -> dict[str, Any]:
             "system_prompt": SYSTEM_PROMPT,
             "chat_template": "ChatML (src.dataset.format_prompt_prefix)",
             "generation": settings,
+            "adapter_load": adapter_load,
             "environment": collect_environment(),
         }
     )
@@ -267,6 +348,7 @@ def run_compare(args: argparse.Namespace) -> dict[str, Any]:
         {
             "id": prompt["id"],
             "instruction": prompt["instruction"],
+            "input": prompt["input"],
             "base_output": base_text,
             "base_new_tokens": base_tokens,
             "finetuned_output": ft_text,

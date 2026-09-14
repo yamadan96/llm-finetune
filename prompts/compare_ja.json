@@ -1,5 +1,5 @@
 {
-  "description": "Hand-written generic Japanese instructions for before/after comparison of the LoRA adapter. They were written for this repository and are not taken from the training dataset.",
+  "description": "Hand-written generic Japanese instructions for before/after comparison of the LoRA adapter. They were written for this repository and are not taken from the training dataset. An optional 'input' is placed in the user message the same way as the dataset's input field.",
   "prompts": [
     {
       "id": "explain-lora",
@@ -7,7 +7,8 @@
     },
     {
       "id": "summarize-notice",
-      "instruction": "次の文章を1文で要約してください。\n『来週の定例会議は、会議室の改装工事のため火曜日から木曜日に変更します。開始時刻は変わらず午前10時で、オンライン参加も引き続き可能です。』"
+      "instruction": "次の文章を1文で要約してください。",
+      "input": "来週の定例会議は、会議室の改装工事のため火曜日から木曜日に変更します。開始時刻は変わらず午前10時で、オンライン参加も引き続き可能です。"
     },
     {
       "id": "list-remote-focus",
@@ -15,7 +16,8 @@
     },
     {
       "id": "rewrite-polite",
-      "instruction": "次の文を、取引先に送るメールにふさわしい丁寧な表現に書き換えてください。\n『資料まだですか？明日までに送ってください。』"
+      "instruction": "次の文を、取引先に送るメールにふさわしい丁寧な表現に書き換えてください。",
+      "input": "資料まだですか？明日までに送ってください。"
     },
     {
       "id": "compare-tcp-udp",
@@ -27,7 +29,8 @@
     },
     {
       "id": "classify-review",
-      "instruction": "次のレビューが肯定的・否定的・中立のどれに当たるかを答え、理由を一言添えてください。\n『配送は早かったが、説明書が分かりにくく組み立てに時間がかかった。』"
+      "instruction": "次のレビューが肯定的・否定的・中立のどれに当たるかを答え、理由を一言添えてください。",
+      "input": "配送は早かったが、説明書が分かりにくく組み立てに時間がかかった。"
     }
   ]
 }

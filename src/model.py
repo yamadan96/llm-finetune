@@ -136,6 +136,32 @@ def resolve_lora_settings(
     return model_id, settings
 
 
+def insert_lora_adapters(
+    model: PreTrainedModel, settings: dict[str, Any]
+) -> PreTrainedModel:
+    """Replace the target Linear layers of a loaded base model with LoRALinear."""
+    return apply_lora(
+        model,
+        settings["target_modules"],
+        rank=settings["rank"],
+        alpha=settings["alpha"],
+        dropout=settings["dropout"],
+    )
+
+
+def load_adapter_weights(
+    model: PreTrainedModel, checkpoint_dir: Path, strict: bool = False
+) -> PreTrainedModel:
+    """Load ``lora_weights.pt`` into inserted adapters and switch to eval mode."""
+    lora_path = checkpoint_dir / LORA_WEIGHTS_FILENAME
+    if not lora_path.exists():
+        raise FileNotFoundError(f"LoRA weights not found: {lora_path}")
+    load_lora_weights(model, str(lora_path), strict=strict)
+    # Newly created LoRA modules start in training mode (dropout active)
+    model.eval()
+    return model
+
+
 def attach_lora_checkpoint(
     model: PreTrainedModel,
     checkpoint_dir: Path,
@@ -144,24 +170,17 @@ def attach_lora_checkpoint(
 ) -> PreTrainedModel:
     """Insert LoRA adapters into an already loaded base model and load weights.
 
-    Used both by ``load_finetuned_model`` and by ``src.compare``, which reuses
-    one loaded base model for before/after generation. With ``strict=True``
-    every adapter parameter must be present in the checkpoint.
+    Used by ``load_finetuned_model``; ``src.compare`` calls the two steps
+    separately so it can record the adapter state before and after loading.
+    With ``strict=True`` every adapter parameter must be present in the
+    checkpoint.
     """
-    lora_path = checkpoint_dir / LORA_WEIGHTS_FILENAME
-    if not lora_path.exists():
-        raise FileNotFoundError(f"LoRA weights not found: {lora_path}")
-    apply_lora(
-        model,
-        settings["target_modules"],
-        rank=settings["rank"],
-        alpha=settings["alpha"],
-        dropout=settings["dropout"],
-    )
-    load_lora_weights(model, str(lora_path), strict=strict)
-    # Newly created LoRA modules start in training mode (dropout active)
-    model.eval()
-    return model
+    if not (checkpoint_dir / LORA_WEIGHTS_FILENAME).exists():
+        raise FileNotFoundError(
+            f"LoRA weights not found: {checkpoint_dir / LORA_WEIGHTS_FILENAME}"
+        )
+    insert_lora_adapters(model, settings)
+    return load_adapter_weights(model, checkpoint_dir, strict=strict)
 
 
 def load_finetuned_model(

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "ok": true,
   "prompts_file": "compare_ja.json",
-  "prompts_sha256": "40901689d5bfeb02fd0116c86e5be4eb81a10a35f696c9eed8d938251ac17f64",
+  "prompts_sha256": "2c2056add7298496ad95917d3f7349674298152169752a7f7c6fc19a696aeb94",
   "dataset_id": "kunishou/databricks-dolly-15k-ja",
   "dataset_revision": "6391034b0126850543299cda071dc6281c31a6fb",
   "dataset_rows": 15015,
@@ -41,12 +41,12 @@
       "exact_matches": [],
       "substring_matches": [],
       "max_jaccard": {
-        "score": 0.0909,
+        "score": 0.0928,
         "row_index": "104",
         "field": "instruction"
       },
       "max_containment": {
-        "score": 0.1647,
+        "score": 0.1687,
         "row_index": "8043",
         "field": "instruction+input"
       }
@@ -73,12 +73,12 @@
       "exact_matches": [],
       "substring_matches": [],
       "max_jaccard": {
-        "score": 0.1053,
+        "score": 0.1081,
         "row_index": "8398",
         "field": "instruction"
       },
       "max_containment": {
-        "score": 0.2075,
+        "score": 0.2157,
         "row_index": "9545",
         "field": "output"
       }
@@ -121,12 +121,12 @@
       "exact_matches": [],
       "substring_matches": [],
       "max_jaccard": {
-        "score": 0.0889,
+        "score": 0.0909,
         "row_index": "1175",
         "field": "instruction"
       },
       "max_containment": {
-        "score": 0.1528,
+        "score": 0.1571,
         "row_index": "5498",
         "field": "output"
       }

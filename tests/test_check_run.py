@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -9,6 +10,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "check_run.py"
+WEIGHTS_BYTES = b"fake adapter weights"
 
 
 def _load_script():
@@ -45,6 +47,20 @@ GOOD_SAMPLES = {
         (REPO_ROOT / "prompts" / "compare_ja.contamination.json").read_text()
     )["prompts_sha256"],
     "generation": {"max_new_tokens": 256},
+    "adapter_load": {
+        "strict": True,
+        "weights_file": "lora_weights.pt",
+        "weights_sha256": hashlib.sha256(WEIGHTS_BYTES).hexdigest(),
+        "lora_modules": 4,
+        "adapter_tensors": 8,
+        "checkpoint_tensors": 8,
+        "missing_keys": 0,
+        "unexpected_keys": 0,
+        "mismatched_tensors": 0,
+        "lora_B_norm_before_load": 0.0,
+        "lora_B_norm_after_load": 1.5,
+        "model_in_eval_mode": True,
+    },
     "samples": [
         {
             "id": "a",
@@ -61,8 +77,19 @@ GOOD_SAMPLES = {
 GOOD_MASKING = {
     "tokenizer": "Qwen/Qwen2.5-7B-Instruct",
     "ok": True,
-    "warnings": [],
-    "samples": [{"row_index": "1", "ok": True}, {"row_index": "1", "ok": True}],
+    "missing_cases": [],
+    "samples": [
+        {"case": case, "row_index": str(i), "ok": True}
+        for i, case in enumerate(
+            [
+                "no_context",
+                "with_context",
+                "context_truncated",
+                "response_truncated",
+                "forced_truncation",
+            ]
+        )
+    ],
 }
 
 
@@ -79,6 +106,7 @@ def _run_dir(
         (run / "masking_check.json").write_text(json.dumps(masking))
     (run / "lora_config.json").write_text("{}")
     (run / "loss_curve.png").write_bytes(b"png")
+    (run / "lora_weights.pt").write_bytes(WEIGHTS_BYTES)
     return run
 
 
@@ -195,8 +223,11 @@ def test_check_run_requires_passing_masking_report(tmp_path) -> None:
     failed = {**GOOD_MASKING, "ok": False, "samples": [{"row_index": "7", "ok": False}]}
     assert _statuses(_run_dir(tmp_path, masking=failed))["mask-boundary"] == "FAIL"
 
-    warned = {**GOOD_MASKING, "warnings": ["row 1: non-empty 'input' field ..."]}
-    assert _statuses(_run_dir(tmp_path, masking=warned))["mask-boundary"] == "WARN"
+    no_context_only = {**GOOD_MASKING, "samples": GOOD_MASKING["samples"][:1]}
+    assert (
+        _statuses(_run_dir(tmp_path, masking=no_context_only))["mask-boundary"]
+        == "FAIL"
+    )
 
 
 def test_check_run_warns_on_little_vram_headroom(tmp_path) -> None:
@@ -270,3 +301,48 @@ def test_check_run_prompt_overlap_requires_matching_report(tmp_path) -> None:
         )
     )
     assert check_run.check_prompt_overlap(GOOD_SAMPLES, tmp_path).status == "FAIL"
+
+
+def _adapter(**changes) -> dict:
+    samples = copy.deepcopy(GOOD_SAMPLES)
+    samples["adapter_load"].update(changes)
+    return samples
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"strict": False},
+        {"lora_modules": 0, "adapter_tensors": 0, "checkpoint_tensors": 0},
+        {"checkpoint_tensors": 6},
+        {"missing_keys": 2},
+        {"unexpected_keys": 1},
+        {"mismatched_tensors": 1},
+        {"lora_B_norm_before_load": 0.3},
+        {"lora_B_norm_after_load": 0.0},
+        {"model_in_eval_mode": False},
+        {"weights_sha256": "0" * 64},
+    ],
+)
+def test_check_run_adapter_load_fails_on_bad_evidence(tmp_path, changes) -> None:
+    run = _run_dir(tmp_path, samples=_adapter(**changes))
+
+    statuses = _statuses(run)
+
+    assert statuses["adapter-load"] == "FAIL"
+    # Base/fine-tuned generation is judged separately
+    assert statuses["generation"] == "PASS"
+
+
+def test_check_run_adapter_load_requires_evidence(tmp_path) -> None:
+    samples = copy.deepcopy(GOOD_SAMPLES)
+    del samples["adapter_load"]
+
+    assert _statuses(_run_dir(tmp_path, samples=samples))["adapter-load"] == "FAIL"
+
+
+def test_check_run_adapter_load_warns_without_weights_file(tmp_path) -> None:
+    run = _run_dir(tmp_path)
+    (run / "lora_weights.pt").unlink()
+
+    assert _statuses(run)["adapter-load"] == "WARN"

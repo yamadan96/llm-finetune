@@ -43,7 +43,7 @@ settings as the full run:
 ```bash
 # Response-only masking with the real Qwen tokenizer on real training rows
 # (tokenizer and dataset only, no model weights; exits 1 on failure)
-uv run python scripts/inspect_masking.py --num-samples 5 \
+uv run python scripts/inspect_masking.py --num-samples 3 \
   --output ./checkpoints/pilot-500/masking_check.json
 
 CHECKPOINT_DIR=./checkpoints/pilot-500 uv run python -m src.train \
@@ -72,10 +72,11 @@ run** are met; it is not a judgement of training quality.
 | `run-completed` | `metrics.json` has `status: completed` (an OOM or crash is recorded as `failed` with the exception type) |
 | `loss-decreases` | every logged train loss is finite and the mean of the last 10% of logged losses is below the first 10% |
 | `response-mask` | supervised tokens are non-zero and fewer than non-pad tokens. This is a count sanity check only; it cannot show that the boundary is in the right place |
-| `mask-boundary` | `masking_check.json` from `scripts/inspect_masking.py` passed: for real rows and the real tokenizer the ignored prefix decodes exactly to the ChatML prompt, the supervised span decodes exactly to `response<|im_end|>`, padding is ignored, and a forced truncation keeps a response prefix |
+| `mask-boundary` | `masking_check.json` from `scripts/inspect_masking.py` passed and covers real rows without `input`, with `input`, with a shortened `input` and with a truncated response (plus a forced truncation): the ignored prefix decodes exactly to the prompt and equals the tokenizer's chat template, the `input` is inside the user message, the supervised span decodes exactly to `response<|im_end|>` (or is a prefix of the response tokens), and padding is ignored |
 | `prompt-overlap` | the prompt set recorded in `samples.json` has a committed contamination report (`prompts/<name>.contamination.json`) with the same SHA-256 and no flagged prompt |
 | `vram-headroom` | peak reserved VRAM is at most 90% of the GPU's total memory (WARN above) |
-| `generation` | base and fine-tuned outputs are non-empty for every prompt, which also shows the adapter checkpoint reloads (WARN for repetitive, cut-off or unchanged outputs) |
+| `adapter-load` | `samples.json` → `adapter_load` shows a strict load: LoRA modules present, adapter tensor count equals the checkpoint's (two per module), no missing/unexpected keys, every adapter tensor bit-identical to `lora_weights.pt`, `lora_B` zero right after insertion and non-zero after loading, model in eval mode, and the recorded SHA-256 equals that of `lora_weights.pt` in the run directory |
+| `generation` | base generation and fine-tuned generation both produced non-empty output for all prompts (WARN for repetitive, cut-off or unchanged outputs). This does not by itself show that the adapter was loaded; that is `adapter-load` |
 | `evidence` | GPU, CUDA, peak VRAM, runtime, git commit, `lora_config.json` and `loss_curve.png` exist, and the artifact metadata contains no absolute local paths and not the current hostname or username (run the check on the training machine) |
 
 Proceed to the full run only if, in addition to `GATE PASS`:
@@ -104,7 +105,7 @@ uv run python scripts/plot_metrics.py ./checkpoints/full-3ep/metrics.json \
 
 CHECKPOINT_DIR=./checkpoints/full-3ep uv run python -m src.compare --max-new-tokens 256
 
-uv run python scripts/inspect_masking.py --num-samples 5 \
+uv run python scripts/inspect_masking.py --num-samples 3 \
   --output ./checkpoints/full-3ep/masking_check.json
 uv run python scripts/check_run.py ./checkpoints/full-3ep
 ```
@@ -190,7 +191,8 @@ re-running `src.compare` (its SHA-256 is recorded in `samples.json`).
   expected to repeat on the same GPU and software versions; bitwise equality
   across different GPUs or CUDA kernels is not guaranteed.
 - `prompts/compare_ja.json`: hand-written generic instructions, not taken
-  from the training dataset. `samples.json` stores its SHA-256 so a changed
+  from the training dataset. A prompt's optional `input` is placed in the
+  user message with the same `補足情報:` format as the training data. `samples.json` stores its SHA-256 so a changed
   prompt set is detectable.
 - `prompts/compare_ja.contamination.json`: output of
   `uv run python scripts/check_prompt_contamination.py --output prompts/compare_ja.contamination.json`.

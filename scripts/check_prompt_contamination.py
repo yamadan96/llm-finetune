@@ -4,15 +4,15 @@ Usage:
     uv run python scripts/check_prompt_contamination.py \
         --output prompts/compare_ja.contamination.json
 
-Every prompt in the prompt set is compared with the ``instruction``,
+Every prompt (its instruction followed by its optional input) is compared with the ``instruction``,
 ``input``, ``output`` and ``instruction + input`` fields of **all** rows of
 the dataset (train and validation splits alike). Texts are normalized with
 NFKC and whitespace removal before comparison.
 
 - exact      normalized prompt equals a normalized field
-- substring  prompt is contained in a field, or a field (or a quoted passage
-             of the prompt) of at least ``--min-substring-chars`` characters
-             is contained in the other
+- substring  prompt is contained in a field, or a field (or the prompt's
+             input or a quoted passage) of at least ``--min-substring-chars``
+             characters is contained in the other
 - similarity character 3-gram Jaccard similarity, and the fraction of the
              prompt's 3-grams that occur in the field (containment)
 
@@ -80,12 +80,13 @@ def check_prompt(
     containment_threshold: float,
     min_substring_chars: int,
 ) -> dict[str, Any]:
-    """Compare one prompt with every field of every row."""
-    text = normalize(prompt["instruction"])
+    """Compare one prompt (instruction + optional input) with every row field."""
+    prompt_input = prompt.get("input") or ""
+    text = normalize(prompt["instruction"] + prompt_input)
     grams = ngrams(text)
     passages = [
         p
-        for p in map(normalize, quoted_passages(prompt["instruction"]))
+        for p in map(normalize, [*quoted_passages(prompt["instruction"]), prompt_input])
         if len(p) >= min_substring_chars
     ]
     exact: list[dict[str, Any]] = []

@@ -14,12 +14,17 @@ scripts/inspect_masking.py) and checks:
 3. response-mask     supervised tokens < non-pad tokens (count sanity check)
 4. mask-boundary     the real-tokenizer masking report passed
 5. vram-headroom     peak reserved VRAM leaves headroom on the GPU
-6. generation        base and fine-tuned outputs exist for every prompt, i.e.
-                     the adapter was reloaded (repetitive/unchanged -> WARN)
-7. prompt-overlap    the prompt set used by src.compare has a passing
+6. adapter-load      src.compare strictly loaded the checkpoint: adapter
+                     modules present, no missing/unexpected keys, every
+                     adapter tensor bit-identical to lora_weights.pt (whose
+                     SHA-256 matches the file in the run directory), lora_B
+                     zero before and non-zero after loading
+7. generation        base and fine-tuned generation produced non-empty output
+                     for every prompt (repetitive/cut-off/unchanged -> WARN)
+8. prompt-overlap    the prompt set used by src.compare has a passing
                      contamination report with the same SHA-256
                      (scripts/check_prompt_contamination.py)
-8. evidence          GPU, VRAM, runtime, git commit, LoRA config and loss
+9. evidence          GPU, VRAM, runtime, git commit, LoRA config and loss
                      curve are recorded, without absolute local paths, the
                      current hostname or username
 
@@ -30,6 +35,7 @@ must still be read by a person. Exits with status 1 if any check FAILs.
 
 import argparse
 import getpass
+import hashlib
 import json
 import re
 import socket
@@ -48,6 +54,12 @@ REPETITION_NGRAM = 8
 MIN_DISTINCT_NGRAM_RATIO = 0.3
 MAX_RESERVED_VRAM_FRACTION = 0.9
 MIN_IDENTITY_LENGTH = 3
+REQUIRED_MASK_CASES = (
+    "no_context",
+    "with_context",
+    "context_truncated",
+    "response_truncated",
+)
 
 
 @dataclass(frozen=True)
@@ -141,6 +153,14 @@ def check_mask_boundary(report: dict[str, Any] | None) -> Check:
     failed = [s.get("row_index") for s in samples if not s.get("ok")]
     if not samples or failed or not report.get("ok"):
         return Check("mask-boundary", FAIL, f"failed samples: {failed or 'none run'}")
+    missing = sorted(set(REQUIRED_MASK_CASES) - {s.get("case") for s in samples})
+    if missing or report.get("missing_cases"):
+        return Check(
+            "mask-boundary",
+            FAIL,
+            f"cases not covered: {missing or report.get('missing_cases')} "
+            "(re-run scripts/inspect_masking.py)",
+        )
     detail = f"{len(samples)} examples with {report.get('tokenizer')} passed"
     if report.get("warnings"):
         return Check(
@@ -163,6 +183,55 @@ def check_vram_headroom(metrics: dict[str, Any]) -> Check:
     if fraction > MAX_RESERVED_VRAM_FRACTION:
         return Check("vram-headroom", WARN, detail + ": little headroom")
     return Check("vram-headroom", PASS, detail)
+
+
+def check_adapter_load(run_dir: Path, samples: dict[str, Any] | None) -> Check:
+    adapter = (samples or {}).get("adapter_load")
+    if adapter is None:
+        return Check(
+            "adapter-load",
+            FAIL,
+            "no adapter_load evidence in samples.json (re-run src.compare)",
+        )
+    problems = []
+    if adapter.get("strict") is not True:
+        problems.append("not loaded with strict=True")
+    modules = adapter.get("lora_modules") or 0
+    tensors = adapter.get("adapter_tensors") or 0
+    if modules <= 0:
+        problems.append("no LoRA modules")
+    if tensors != 2 * modules or adapter.get("checkpoint_tensors") != tensors:
+        problems.append(
+            f"tensor counts model={tensors} checkpoint={adapter.get('checkpoint_tensors')} "
+            f"modules={modules}"
+        )
+    for key in ("missing_keys", "unexpected_keys", "mismatched_tensors"):
+        if adapter.get(key) != 0:
+            problems.append(f"{key}={adapter.get(key)}")
+    if adapter.get("lora_B_norm_before_load") != 0:
+        problems.append("lora_B was not zero before loading")
+    if not (adapter.get("lora_B_norm_after_load") or 0) > 0:
+        problems.append("lora_B is zero after loading (adapter is a no-op)")
+    if adapter.get("model_in_eval_mode") is not True:
+        problems.append("model not in eval mode")
+    if problems:
+        return Check("adapter-load", FAIL, "; ".join(problems))
+
+    detail = f"{modules} LoRA modules, {tensors} tensors bit-identical to checkpoint"
+    weights = run_dir / adapter.get("weights_file", "lora_weights.pt")
+    if not weights.exists():
+        return Check(
+            "adapter-load",
+            WARN,
+            f"{detail}; {weights.name} absent, hash not re-checked",
+        )
+    if hashlib.sha256(weights.read_bytes()).hexdigest() != adapter.get(
+        "weights_sha256"
+    ):
+        return Check(
+            "adapter-load", FAIL, f"{weights.name} differs from the loaded file"
+        )
+    return Check("adapter-load", PASS, f"{detail}, sha256 matches {weights.name}")
 
 
 def _is_repetitive(text: str) -> bool:
@@ -210,7 +279,7 @@ def check_generation(samples: dict[str, Any] | None) -> Check:
     return Check(
         "generation",
         PASS,
-        f"{len(items)} prompts with non-empty base and fine-tuned outputs "
+        f"{len(items)} prompts with non-empty base and fine-tuned generations "
         "(read samples.md)",
     )
 
@@ -343,6 +412,7 @@ def run_checks(run_dir: Path) -> list[Check]:
         check_response_mask(metrics),
         check_mask_boundary(_load_json(run_dir / "masking_check.json")),
         check_vram_headroom(metrics),
+        check_adapter_load(run_dir, samples),
         check_generation(samples),
         check_prompt_overlap(samples),
         check_evidence(run_dir, metrics, samples),
