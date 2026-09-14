@@ -10,6 +10,8 @@ from transformers import Qwen2Config, Qwen2ForCausalLM
 PAD_ID = 0
 SPECIAL_TOKENS = {"<|im_start|>": 1, "<|im_end|>": 2}
 VOCAB_SIZE = 128
+# Decode plain ids into CJK ideographs so decoded text never looks like a path
+FIRST_DECODED_CHAR = 0x4E00
 _SPECIAL_RE = re.compile("|".join(re.escape(t) for t in SPECIAL_TOKENS))
 
 
@@ -38,6 +40,18 @@ class FakeTokenizer:
         self, text: str, add_special_tokens: bool = True
     ) -> dict[str, list[int]]:
         return {"input_ids": self.encode_text(text)}
+
+    def decode(self, ids, skip_special_tokens: bool = False) -> str:
+        """Deterministic, lossy inverse used only to turn generated ids into text."""
+        names = {v: k for k, v in SPECIAL_TOKENS.items()}
+        pieces: list[str] = []
+        for token_id in ids.tolist() if hasattr(ids, "tolist") else ids:
+            if token_id in names or token_id == PAD_ID:
+                if not skip_special_tokens:
+                    pieces.append(names.get(token_id, "<pad>"))
+                continue
+            pieces.append(chr(FIRST_DECODED_CHAR + token_id))
+        return "".join(pieces)
 
     def save_pretrained(self, path: str) -> None:
         (Path(path) / "fake_tokenizer.txt").write_text("fake", encoding="utf-8")

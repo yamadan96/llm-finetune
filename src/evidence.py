@@ -74,9 +74,14 @@ def _json_safe_float(value: float | None) -> float | None:
     return None
 
 
-def write_json(path: Path, obj: Any) -> None:
-    """Atomically write path-redacted JSON (a crash never leaves a torn file)."""
-    safe = redact_paths(obj)
+def write_json(path: Path, obj: Any, redact: bool = True) -> None:
+    """Atomically write JSON (a crash never leaves a torn file).
+
+    With ``redact=True`` (default) absolute-path-looking strings are replaced.
+    Callers writing free text such as generated samples redact their metadata
+    themselves and pass ``redact=False``.
+    """
+    safe = redact_paths(obj) if redact else obj
     if safe != obj:
         logger.warning("Redacted local path strings before writing %s", path.name)
     tmp_path = path.with_name(f"{path.name}.tmp")

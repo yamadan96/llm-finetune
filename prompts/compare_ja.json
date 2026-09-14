@@ -1,0 +1,33 @@
+{
+  "description": "Hand-written generic Japanese instructions for before/after comparison of the LoRA adapter. They were written for this repository and are not taken from the training dataset.",
+  "prompts": [
+    {
+      "id": "explain-lora",
+      "instruction": "大規模言語モデルの LoRA（低ランク適応）は、全パラメータを更新するファインチューニングと比べて何を節約できるのかを、3文以内で説明してください。"
+    },
+    {
+      "id": "summarize-notice",
+      "instruction": "次の文章を1文で要約してください。\n『来週の定例会議は、会議室の改装工事のため火曜日から木曜日に変更します。開始時刻は変わらず午前10時で、オンライン参加も引き続き可能です。』"
+    },
+    {
+      "id": "list-remote-focus",
+      "instruction": "在宅勤務中に集中力を保つための工夫を、箇条書きで5つ挙げてください。"
+    },
+    {
+      "id": "rewrite-polite",
+      "instruction": "次の文を、取引先に送るメールにふさわしい丁寧な表現に書き換えてください。\n『資料まだですか？明日までに送ってください。』"
+    },
+    {
+      "id": "compare-tcp-udp",
+      "instruction": "TCP と UDP の違いを、それぞれの用途の例を1つずつ含めて簡潔に説明してください。"
+    },
+    {
+      "id": "arithmetic-apples",
+      "instruction": "りんごが3個ずつ入った袋が4つと、ばら売りのりんごが5個あります。りんごは全部で何個ですか？計算の過程も示してください。"
+    },
+    {
+      "id": "classify-review",
+      "instruction": "次のレビューが肯定的・否定的・中立のどれに当たるかを答え、理由を一言添えてください。\n『配送は早かったが、説明書が分かりにくく組み立てに時間がかかった。』"
+    }
+  ]
+}

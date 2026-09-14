@@ -19,6 +19,7 @@ import torch.nn as nn
 logger = logging.getLogger(__name__)
 
 LORA_CONFIG_FILENAME = "lora_config.json"
+LORA_WEIGHTS_FILENAME = "lora_weights.pt"
 
 
 class LoRALinear(nn.Module):
@@ -126,11 +127,23 @@ def save_lora_weights(model: nn.Module, path: str) -> None:
     logger.info("Saved LoRA weights to %s (%d tensors)", path, len(lora_state))
 
 
-def load_lora_weights(model: nn.Module, path: str, device: str = "cpu") -> nn.Module:
-    """Load LoRA adapter weights into model."""
+def load_lora_weights(
+    model: nn.Module, path: str, device: str = "cpu", strict: bool = False
+) -> nn.Module:
+    """Load LoRA adapter weights into model.
+
+    With ``strict=True`` a checkpoint that does not cover every adapter
+    parameter (or contains keys the model lacks) raises instead of warning,
+    so a mismatched adapter cannot silently leave the base model unchanged.
+    """
     state = torch.load(path, map_location=device, weights_only=True)
     missing, unexpected = model.load_state_dict(state, strict=False)
     lora_missing = [k for k in missing if "lora_" in k]
+    if strict and (lora_missing or unexpected):
+        raise RuntimeError(
+            f"LoRA checkpoint does not match the model: missing={lora_missing}, "
+            f"unexpected={list(unexpected)}"
+        )
     if lora_missing:
         logger.warning("Missing LoRA keys: %s", lora_missing)
     logger.info("Loaded LoRA weights from %s", path)

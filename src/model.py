@@ -2,6 +2,7 @@
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import torch
 from transformers import (
@@ -13,6 +14,7 @@ from transformers import (
 
 from .lora import (
     LORA_CONFIG_FILENAME,
+    LORA_WEIGHTS_FILENAME,
     apply_lora,
     load_lora_config,
     load_lora_weights,
@@ -87,19 +89,16 @@ def enable_gradient_checkpointing(model: PreTrainedModel) -> None:
     )
 
 
-def load_finetuned_model(
+def resolve_lora_settings(
     checkpoint_dir: Path,
     model_id: str = DEFAULT_BASE_MODEL,
-) -> tuple[PreTrainedModel, PreTrainedTokenizerBase]:
-    """Load base model + LoRA weights from checkpoint directory.
+) -> tuple[str, dict[str, Any]]:
+    """Return ``(base model id, adapter settings)`` for a checkpoint directory.
 
     Adapter hyperparameters are read from ``lora_config.json`` when present;
-    older checkpoints without it fall back to the module defaults.
+    older checkpoints without it fall back to the module defaults. The base
+    model id stored in the config takes precedence over ``model_id``.
     """
-    lora_path = checkpoint_dir / "lora_weights.pt"
-    if not lora_path.exists():
-        raise FileNotFoundError(f"LoRA weights not found: {lora_path}")
-
     config = load_lora_config(checkpoint_dir / LORA_CONFIG_FILENAME)
     if config is None:
         logger.warning(
@@ -117,14 +116,57 @@ def load_finetuned_model(
             saved_model_id,
         )
         model_id = saved_model_id
+    settings = {
+        "rank": config.get("rank", LORA_RANK),
+        "alpha": config.get("alpha", LORA_ALPHA),
+        "dropout": config.get("dropout", LORA_DROPOUT),
+        "target_modules": config.get("target_modules", LORA_TARGET_MODULES),
+    }
+    return model_id, settings
 
-    model, tokenizer = build_lora_model(
-        model_id,
-        rank=config.get("rank", LORA_RANK),
-        alpha=config.get("alpha", LORA_ALPHA),
-        dropout=config.get("dropout", LORA_DROPOUT),
-        target_modules=config.get("target_modules", LORA_TARGET_MODULES),
+
+def attach_lora_checkpoint(
+    model: PreTrainedModel,
+    checkpoint_dir: Path,
+    settings: dict[str, Any],
+    strict: bool = False,
+) -> PreTrainedModel:
+    """Insert LoRA adapters into an already loaded base model and load weights.
+
+    Used both by ``load_finetuned_model`` and by ``src.compare``, which reuses
+    one loaded base model for before/after generation. With ``strict=True``
+    every adapter parameter must be present in the checkpoint.
+    """
+    lora_path = checkpoint_dir / LORA_WEIGHTS_FILENAME
+    if not lora_path.exists():
+        raise FileNotFoundError(f"LoRA weights not found: {lora_path}")
+    apply_lora(
+        model,
+        settings["target_modules"],
+        rank=settings["rank"],
+        alpha=settings["alpha"],
+        dropout=settings["dropout"],
     )
-    load_lora_weights(model, str(lora_path))
+    load_lora_weights(model, str(lora_path), strict=strict)
+    # Newly created LoRA modules start in training mode (dropout active)
     model.eval()
+    return model
+
+
+def load_finetuned_model(
+    checkpoint_dir: Path,
+    model_id: str = DEFAULT_BASE_MODEL,
+) -> tuple[PreTrainedModel, PreTrainedTokenizerBase]:
+    """Load base model + LoRA weights from checkpoint directory.
+
+    Adapter hyperparameters are read from ``lora_config.json`` when present;
+    older checkpoints without it fall back to the module defaults.
+    """
+    lora_path = checkpoint_dir / LORA_WEIGHTS_FILENAME
+    if not lora_path.exists():
+        raise FileNotFoundError(f"LoRA weights not found: {lora_path}")
+
+    model_id, settings = resolve_lora_settings(checkpoint_dir, model_id)
+    model, tokenizer = load_base_model(model_id)
+    attach_lora_checkpoint(model, checkpoint_dir, settings)
     return model, tokenizer
