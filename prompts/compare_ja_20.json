@@ -1,0 +1,115 @@
+{
+  "description": "Fixed 20-prompt evaluation set for comparing LoRA runs. The first 7 prompts are prompts/compare_ja.json unchanged; 13 hand-written generic prompts were added so that summarization, classification, rewriting, QA, list generation, reasoning and arithmetic each have at least two prompts. Not taken from the training dataset; an optional 'input' is placed in the user message the same way as the dataset's input field. Use the same set for every run in a comparison.",
+  "prompts": [
+    {
+      "id": "explain-lora",
+      "category": "qa",
+      "instruction": "大規模言語モデルの LoRA（低ランク適応）は、全パラメータを更新するファインチューニングと比べて何を節約できるのかを、3文以内で説明してください。"
+    },
+    {
+      "id": "summarize-notice",
+      "category": "summarization",
+      "instruction": "次の文章を1文で要約してください。",
+      "input": "来週の定例会議は、会議室の改装工事のため火曜日から木曜日に変更します。開始時刻は変わらず午前10時で、オンライン参加も引き続き可能です。"
+    },
+    {
+      "id": "list-remote-focus",
+      "category": "list",
+      "instruction": "在宅勤務中に集中力を保つための工夫を、箇条書きで5つ挙げてください。"
+    },
+    {
+      "id": "rewrite-polite",
+      "category": "rewrite",
+      "instruction": "次の文を、取引先に送るメールにふさわしい丁寧な表現に書き換えてください。",
+      "input": "資料まだですか？明日までに送ってください。"
+    },
+    {
+      "id": "compare-tcp-udp",
+      "category": "qa",
+      "instruction": "TCP と UDP の違いを、それぞれの用途の例を1つずつ含めて簡潔に説明してください。"
+    },
+    {
+      "id": "arithmetic-apples",
+      "category": "arithmetic",
+      "instruction": "りんごが3個ずつ入った袋が4つと、ばら売りのりんごが5個あります。りんごは全部で何個ですか？計算の過程も示してください。"
+    },
+    {
+      "id": "classify-review",
+      "category": "classification",
+      "instruction": "次のレビューが肯定的・否定的・中立のどれに当たるかを答え、理由を一言添えてください。",
+      "input": "配送は早かったが、説明書が分かりにくく組み立てに時間がかかった。"
+    },
+    {
+      "id": "summarize-email",
+      "category": "summarization",
+      "instruction": "次のメールの要点を2文以内でまとめてください。",
+      "input": "お疲れさまです。来月の展示会について連絡します。ブースの設営は前日の午後3時から可能です。配布用パンフレットは500部を予定していますが、在庫が300部しかないため、今週金曜日までに追加発注するかどうか決める必要があります。ご意見をいただけると助かります。"
+    },
+    {
+      "id": "summarize-three-points",
+      "category": "summarization",
+      "instruction": "次の文章の内容を、箇条書きで3点にまとめてください。",
+      "input": "市の図書館は来年4月から開館時間を変更します。平日は午前9時から午後8時まで、土日は午前10時から午後6時までとなります。また、毎月第2月曜日を休館日とし、電子書籍の貸し出しサービスも新たに始めます。"
+    },
+    {
+      "id": "classify-inquiry",
+      "category": "classification",
+      "instruction": "次の問い合わせを「請求」「技術サポート」「解約」「その他」のいずれかに分類し、分類名だけを答えてください。",
+      "input": "先月から毎朝アプリを起動すると、ログイン画面で固まって先に進めません。再インストールも試しました。"
+    },
+    {
+      "id": "classify-urgency",
+      "category": "classification",
+      "instruction": "次の連絡の緊急度を「高」「中」「低」で判定し、理由を1文で述べてください。",
+      "input": "サーバー室の空調が停止しており、室温が上昇し続けています。"
+    },
+    {
+      "id": "rewrite-plain",
+      "category": "rewrite",
+      "instruction": "次の文を、小学生にも分かるやさしい言葉に書き換えてください。",
+      "input": "本施策は、地域住民の利便性向上と行政コストの削減を同時に実現することを目的としています。"
+    },
+    {
+      "id": "rewrite-bullets-to-prose",
+      "category": "rewrite",
+      "instruction": "次の箇条書きを、自然なつながりのある2〜3文の文章にしてください。",
+      "input": "・集合時間は午前8時\n・場所は駅の東口\n・雨天の場合は中止"
+    },
+    {
+      "id": "qa-context-passage",
+      "category": "qa",
+      "instruction": "次の文章を読んで、新しいカフェが開店する曜日を答えてください。",
+      "input": "駅前の空き店舗に新しいカフェが入ることが決まりました。内装工事は今月末に終わり、来月最初の土曜日に開店する予定です。開店日から3日間はコーヒーが半額になります。"
+    },
+    {
+      "id": "qa-photosynthesis",
+      "category": "qa",
+      "instruction": "植物の光合成とは何か、2文で説明してください。"
+    },
+    {
+      "id": "list-welcome-party",
+      "category": "list",
+      "instruction": "新入社員の歓迎会を企画するときに必要な準備を、箇条書きで5つ挙げてください。"
+    },
+    {
+      "id": "list-pros-cons",
+      "category": "list",
+      "instruction": "電車通勤の良い点と悪い点を、それぞれ2つずつ挙げてください。"
+    },
+    {
+      "id": "reasoning-order",
+      "category": "reasoning",
+      "instruction": "Aさん、Bさん、Cさんの3人が徒競走をしました。AさんはBさんより先にゴールし、CさんはAさんより先にゴールしました。1位は誰ですか？理由も説明してください。"
+    },
+    {
+      "id": "reasoning-deduction",
+      "category": "reasoning",
+      "instruction": "「この店の商品はすべて1000円以下である」「このペンはこの店の商品である」という2つの文が正しいとき、このペンの価格について何が言えますか？"
+    },
+    {
+      "id": "arithmetic-discount",
+      "category": "arithmetic",
+      "instruction": "定価3000円の商品が2割引きで売られています。この値段に消費税10%を加えると、支払う金額はいくらですか？計算の過程も示してください。"
+    }
+  ]
+}

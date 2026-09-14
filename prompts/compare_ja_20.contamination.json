@@ -1,0 +1,343 @@
+{
+  "schema_version": 1,
+  "ok": true,
+  "prompts_file": "compare_ja_20.json",
+  "prompts_sha256": "f60e3fb8177d2cca92375fee32f25bd9464d1e67ab10b5eb97c9531d53fb21da",
+  "dataset_id": "kunishou/databricks-dolly-15k-ja",
+  "dataset_revision": null,
+  "dataset_rows": 15015,
+  "fields": [
+    "instruction",
+    "input",
+    "output",
+    "instruction+input"
+  ],
+  "normalization": "NFKC, whitespace removed",
+  "thresholds": {
+    "jaccard_char_3gram": 0.5,
+    "containment_char_3gram": 0.8,
+    "min_substring_chars": 20
+  },
+  "results": [
+    {
+      "id": "explain-lora",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.0957,
+        "row_index": "8548",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.338,
+        "row_index": "710",
+        "field": "input"
+      }
+    },
+    {
+      "id": "summarize-notice",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.0928,
+        "row_index": "104",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.1687,
+        "row_index": "8043",
+        "field": "instruction+input"
+      }
+    },
+    {
+      "id": "list-remote-focus",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.2,
+        "row_index": "6526",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.3125,
+        "row_index": "5042",
+        "field": "instruction+input"
+      }
+    },
+    {
+      "id": "rewrite-polite",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.1081,
+        "row_index": "8398",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.2157,
+        "row_index": "9545",
+        "field": "output"
+      }
+    },
+    {
+      "id": "compare-tcp-udp",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.1667,
+        "row_index": "232",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.2821,
+        "row_index": "1404",
+        "field": "instruction+input"
+      }
+    },
+    {
+      "id": "arithmetic-apples",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.0795,
+        "row_index": "4875",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.1818,
+        "row_index": "1611",
+        "field": "instruction+input"
+      }
+    },
+    {
+      "id": "classify-review",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.0909,
+        "row_index": "1175",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.1571,
+        "row_index": "5498",
+        "field": "output"
+      }
+    },
+    {
+      "id": "summarize-email",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.0667,
+        "row_index": "2224",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.2292,
+        "row_index": "1502",
+        "field": "input"
+      }
+    },
+    {
+      "id": "summarize-three-points",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.0833,
+        "row_index": "5042",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.1466,
+        "row_index": "11837",
+        "field": "instruction+input"
+      }
+    },
+    {
+      "id": "classify-inquiry",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.0982,
+        "row_index": "2138",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.19,
+        "row_index": "1502",
+        "field": "input"
+      }
+    },
+    {
+      "id": "classify-urgency",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.0753,
+        "row_index": "1076",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.2344,
+        "row_index": "1502",
+        "field": "input"
+      }
+    },
+    {
+      "id": "rewrite-plain",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.0842,
+        "row_index": "8398",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.25,
+        "row_index": "789",
+        "field": "instruction+input"
+      }
+    },
+    {
+      "id": "rewrite-bullets-to-prose",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.1127,
+        "row_index": "4897",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.1724,
+        "row_index": "5301",
+        "field": "instruction+input"
+      }
+    },
+    {
+      "id": "qa-context-passage",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.084,
+        "row_index": "1551",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.1863,
+        "row_index": "1098",
+        "field": "output"
+      }
+    },
+    {
+      "id": "qa-photosynthesis",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.2632,
+        "row_index": "12808",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.5238,
+        "row_index": "10751",
+        "field": "instruction"
+      }
+    },
+    {
+      "id": "list-welcome-party",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.1887,
+        "row_index": "907",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.2778,
+        "row_index": "907",
+        "field": "instruction"
+      }
+    },
+    {
+      "id": "list-pros-cons",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.1892,
+        "row_index": "6526",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.3571,
+        "row_index": "2157",
+        "field": "instruction+input"
+      }
+    },
+    {
+      "id": "reasoning-order",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.1045,
+        "row_index": "7015",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.1864,
+        "row_index": "3327",
+        "field": "instruction"
+      }
+    },
+    {
+      "id": "reasoning-deduction",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.0588,
+        "row_index": "14658",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.2333,
+        "row_index": "2157",
+        "field": "input"
+      }
+    },
+    {
+      "id": "arithmetic-discount",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.0769,
+        "row_index": "5600",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.2273,
+        "row_index": "9545",
+        "field": "output"
+      }
+    }
+  ]
+}

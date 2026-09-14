@@ -222,6 +222,29 @@ def test_compare_mismatched_adapter_raises(
         run_compare(_args(checkpoint, prompts_file, tmp_path / "out"))
 
 
+def test_twenty_prompt_set_extends_the_default_set_unchanged() -> None:
+    from collections import Counter
+
+    default = load_prompts(compare_module.REPO_ROOT / compare_module.DEFAULT_PROMPTS)
+    twenty = load_prompts(compare_module.REPO_ROOT / "prompts" / "compare_ja_20.json")
+
+    assert len(twenty) == 20
+    assert len({p["id"] for p in twenty}) == 20
+    strip = [{k: v for k, v in p.items() if k != "category"} for p in twenty[:7]]
+    assert strip == [{k: v for k, v in p.items() if k != "category"} for p in default]
+    categories = Counter(p["category"] for p in twenty)
+    assert set(categories) == {
+        "summarization",
+        "classification",
+        "rewrite",
+        "qa",
+        "list",
+        "reasoning",
+        "arithmetic",
+    }
+    assert min(categories.values()) >= 2
+
+
 def test_default_prompt_set_is_valid() -> None:
     prompts = load_prompts(compare_module.REPO_ROOT / compare_module.DEFAULT_PROMPTS)
 
