@@ -54,13 +54,27 @@ GOOD_SAMPLES = {
 }
 
 
-def _run_dir(tmp_path, metrics=GOOD_METRICS, samples=GOOD_SAMPLES) -> Path:
+GOOD_MASKING = {
+    "tokenizer": "Qwen/Qwen2.5-7B-Instruct",
+    "ok": True,
+    "warnings": [],
+    "samples": [{"row_index": "1", "ok": True}, {"row_index": "1", "ok": True}],
+}
+
+
+def _run_dir(
+    tmp_path, metrics=GOOD_METRICS, samples=GOOD_SAMPLES, masking=GOOD_MASKING
+) -> Path:
     run = tmp_path / "run"
     run.mkdir(exist_ok=True)
     (run / "metrics.json").write_text(json.dumps(metrics))
     if samples is not None:
         (run / "samples.json").write_text(json.dumps(samples))
+        (run / "samples.md").write_text("# Before/After samples\n\n## 1. a\n")
+    if masking is not None:
+        (run / "masking_check.json").write_text(json.dumps(masking))
     (run / "lora_config.json").write_text("{}")
+    (run / "loss_curve.png").write_bytes(b"png")
     return run
 
 
@@ -73,7 +87,9 @@ def test_check_run_passes_good_pilot(tmp_path, capsys) -> None:
 
     assert check_run.main([str(run)]) == 0
     assert set(_statuses(run).values()) == {"PASS"}
-    assert "GO" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "GATE PASS" in out
+    assert "not a quality judgement" in out
 
 
 def _mutated(**changes):
@@ -101,6 +117,16 @@ def _mutated(**changes):
             "loss-decreases",
         ),
         (_mutated(runtime__tokens_trained=900), "response-mask"),
+        (
+            _mutated(
+                train_loss_steps=[
+                    {"step": 10, "epoch": 1, "loss": 2.0, "lr": 0.1},
+                    {"step": 20, "epoch": 1, "loss": None, "lr": 0.1},
+                    {"step": 30, "epoch": 1, "loss": 1.0, "lr": 0.1},
+                ]
+            ),
+            "loss-decreases",
+        ),
         (_mutated(environment__gpus=None), "evidence"),
         (_mutated(memory__max_memory_allocated_gib=None), "evidence"),
         (_mutated(config__model_id="/cache/models/qwen"), "evidence"),
@@ -157,3 +183,63 @@ def test_check_run_help_runs_as_script() -> None:
 
     assert result.returncode == 0
     assert "run_dir" in result.stdout
+
+
+def test_check_run_requires_passing_masking_report(tmp_path) -> None:
+    assert _statuses(_run_dir(tmp_path, masking=None))["mask-boundary"] == "FAIL"
+
+    failed = {**GOOD_MASKING, "ok": False, "samples": [{"row_index": "7", "ok": False}]}
+    assert _statuses(_run_dir(tmp_path, masking=failed))["mask-boundary"] == "FAIL"
+
+    warned = {**GOOD_MASKING, "warnings": ["row 1: non-empty 'input' field ..."]}
+    assert _statuses(_run_dir(tmp_path, masking=warned))["mask-boundary"] == "WARN"
+
+
+def test_check_run_warns_on_little_vram_headroom(tmp_path) -> None:
+    run = _run_dir(tmp_path, metrics=_mutated(memory__max_memory_reserved_gib=46.0))
+
+    assert _statuses(run)["vram-headroom"] == "WARN"
+
+
+def test_check_run_fails_on_empty_base_output(tmp_path) -> None:
+    samples = copy.deepcopy(GOOD_SAMPLES)
+    samples["samples"][0]["base_output"] = " "
+
+    assert _statuses(_run_dir(tmp_path, samples=samples))["generation"] == "FAIL"
+
+
+def test_check_run_fails_without_loss_curve(tmp_path) -> None:
+    run = _run_dir(tmp_path)
+    (run / "loss_curve.png").unlink()
+
+    assert _statuses(run)["evidence"] == "FAIL"
+
+
+def test_check_run_fails_when_hostname_is_recorded(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(check_run.socket, "gethostname", lambda: "labhost01.example")
+    metrics = _mutated(config__note="trained on labhost01")
+
+    checks = {c.name: c for c in check_run.run_checks(_run_dir(tmp_path, metrics))}
+
+    assert checks["evidence"].status == "FAIL"
+    assert "hostname" in checks["evidence"].detail
+
+
+def test_check_run_ignores_hostname_inside_generated_text(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(check_run.socket, "gethostname", lambda: "labhost01")
+    samples = copy.deepcopy(GOOD_SAMPLES)
+    samples["samples"][0]["finetuned_output"] = "labhost01 について"
+
+    assert _statuses(_run_dir(tmp_path, samples=samples))["evidence"] == "PASS"
+
+
+def test_check_run_fails_when_username_is_recorded(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(check_run.getpass, "getuser", lambda: "labuser")
+    metrics = _mutated(config__owner="labuser")
+
+    checks = {c.name: c for c in check_run.run_checks(_run_dir(tmp_path, metrics))}
+
+    assert checks["evidence"].status == "FAIL"
+    assert "username" in checks["evidence"].detail

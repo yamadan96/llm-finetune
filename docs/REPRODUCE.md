@@ -41,6 +41,11 @@ rows, chosen from the seeded split) with the same model, LoRA and optimizer
 settings as the full run:
 
 ```bash
+# Response-only masking with the real Qwen tokenizer on real training rows
+# (tokenizer and dataset only, no model weights; exits 1 on failure)
+uv run python scripts/inspect_masking.py --num-samples 5 \
+  --output ./checkpoints/pilot-500/masking_check.json
+
 CHECKPOINT_DIR=./checkpoints/pilot-500 uv run python -m src.train \
   --epochs 1 --batch-size 2 --rank 16 --alpha 32 \
   --max-train-samples 500 --max-val-samples 100 --log-every 10
@@ -58,40 +63,29 @@ rows (limits are applied after the split with the same `--seed`).
 
 ## 3. Pilot gate
 
-`scripts/check_run.py` exits with status 1 (NO-GO) if any check fails:
+`scripts/check_run.py` exits with status 1 (`GATE FAIL`) if any check fails.
+`GATE PASS` means only that the **minimum conditions for starting the full
+run** are met; it is not a judgement of training quality.
 
 | Check | Passes when |
 |---|---|
 | `run-completed` | `metrics.json` has `status: completed` (an OOM or crash is recorded as `failed` with the exception type) |
-| `loss-decreases` | the mean of the last 10% of logged train losses is below the first 10%, and validation loss is finite |
-| `response-mask` | supervised tokens are non-zero and fewer than non-pad tokens, i.e. prompt tokens are excluded from the loss |
-| `generation` | `samples.json` exists and every fine-tuned output is non-empty (WARN for repetitive, cut-off or unchanged outputs) |
-| `evidence` | GPU, CUDA, peak VRAM, runtime, git commit and `lora_config.json` are recorded, with no absolute local paths |
+| `loss-decreases` | every logged train loss is finite and the mean of the last 10% of logged losses is below the first 10% |
+| `response-mask` | supervised tokens are non-zero and fewer than non-pad tokens. This is a count sanity check only; it cannot show that the boundary is in the right place |
+| `mask-boundary` | `masking_check.json` from `scripts/inspect_masking.py` passed: for real rows and the real tokenizer the ignored prefix decodes exactly to the ChatML prompt, the supervised span decodes exactly to `response<|im_end|>`, padding is ignored, and a forced truncation keeps a response prefix |
+| `vram-headroom` | peak reserved VRAM is at most 90% of the GPU's total memory (WARN above) |
+| `generation` | base and fine-tuned outputs are non-empty for every prompt, which also shows the adapter checkpoint reloads (WARN for repetitive, cut-off or unchanged outputs) |
+| `evidence` | GPU, CUDA, peak VRAM, runtime, git commit, `lora_config.json` and `loss_curve.png` exist, and the artifact metadata contains no absolute local paths and not the current hostname or username (run the check on the training machine) |
 
-The script checks recorded evidence only. Before the full run, also:
+Proceed to the full run only if, in addition to `GATE PASS`:
 
-1. **Read `samples.md`.** The fine-tuned answers must be coherent Japanese
+1. **Every WARN has been read and judged by a person.** After 1 epoch on 500
+   rows, fine-tuned outputs identical to the base outputs are not by
+   themselves a failure.
+2. **`samples.md` has been read.** Both columns must be coherent Japanese
    responses to the prompts, not broken or repetitive text.
-2. **Inspect the loss mask on the real tokenizer** (downloads the tokenizer
-   only). The decoded supervised part must be exactly the response followed by
-   `<|im_end|>`:
-
-   ```bash
-   uv run python - <<'EOF'
-   from transformers import AutoTokenizer
-   from src.dataset import IGNORE_INDEX, build_example
-
-   tok = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct")
-   ex = build_example(tok, "日本の首都はどこですか？", "東京です。", max_length=64)
-   labels = ex["labels"]
-   print("supervised:", repr(tok.decode(labels[labels != IGNORE_INDEX])))
-   EOF
-   ```
-
-3. **Check headroom.** Compare `memory.max_memory_reserved_gib` with
-   `environment.gpus[0].total_memory_gib`. The pilot uses the same
-   `--max-length` and `--batch-size` as the full run, so the per-step memory
-   footprint should be similar.
+3. **`masking_check.json` has been looked at**, not only its `ok` flag: the
+   supervised text of each example is printed by `inspect_masking.py`.
 
 If the pilot fails, fix the cause (for example `--batch-size 1` or a smaller
 `--max-length` after an OOM) and repeat the pilot with a new `CHECKPOINT_DIR`.
@@ -109,6 +103,8 @@ uv run python scripts/plot_metrics.py ./checkpoints/full-3ep/metrics.json \
 
 CHECKPOINT_DIR=./checkpoints/full-3ep uv run python -m src.compare --max-new-tokens 256
 
+uv run python scripts/inspect_masking.py --num-samples 5 \
+  --output ./checkpoints/full-3ep/masking_check.json
 uv run python scripts/check_run.py ./checkpoints/full-3ep
 ```
 
@@ -128,6 +124,7 @@ Commit only these files per run:
 | `lora_config.json` | `src.train` | yes |
 | `loss_curve.png` | `scripts/plot_metrics.py` | yes |
 | `samples.json`, `samples.md` | `src.compare` | yes |
+| `masking_check.json` | `scripts/inspect_masking.py` | yes |
 | `lora_weights.pt` | `src.train` | no (ignored via `checkpoints/**/*.pt`) |
 | tokenizer files | `src.train` | no (a copy of the base model's tokenizer) |
 | console logs, `wandb/` | — | no (may contain machine-specific paths) |
@@ -135,7 +132,8 @@ Commit only these files per run:
 ```bash
 git add checkpoints/full-3ep/metrics.json checkpoints/full-3ep/lora_config.json \
   checkpoints/full-3ep/loss_curve.png \
-  checkpoints/full-3ep/samples.json checkpoints/full-3ep/samples.md
+  checkpoints/full-3ep/samples.json checkpoints/full-3ep/samples.md \
+  checkpoints/full-3ep/masking_check.json
 git diff --cached --stat
 ```
 
@@ -157,8 +155,16 @@ these files contains an absolute path.
 | Runtime | `metrics.json` → `runtime` (`total_seconds`, `epoch_seconds`, `optimizer_steps`, `tokens_per_second`) |
 | Peak VRAM | `metrics.json` → `memory` (`max_memory_allocated_gib`, `max_memory_reserved_gib`) |
 | Loss curve | `loss_curve.png` (from `train_loss_steps` and `epochs[].val_loss`) |
-| Before/After | `samples.md` / `samples.json` |
+| Before/After | `samples.md` / `samples.json`: all prompts of the fixed set, unedited (see below) |
 | Reproduction | the commands in this document at `environment.git_commit` |
+
+### Before/After selection rule
+
+The README shows the outputs for **every** prompt in `prompts/compare_ja.json`
+(currently 7), in file order, exactly as written to `samples.md`, including
+unchanged, cut-off or worse fine-tuned answers. Prompts are not added,
+removed or reworded after a run has been seen; a changed prompt set requires
+re-running `src.compare` (its SHA-256 is recorded in `samples.json`).
 
 ### Field definitions
 
