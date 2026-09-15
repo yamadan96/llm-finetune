@@ -391,6 +391,112 @@ def test_instruction_dataset_uses_input_field_and_reports_stats(
         "response_truncated": 1,
         "skipped_empty": 1,
         "skipped_truncated": 1,
+        "excluded_response_truncated": 0,
     }
     decoded = reversible_tokenizer.decode(dataset[1]["input_ids"])
     assert "補足情報:\n本文<|im_end|>" in decoded
+
+
+CTX_ROWS = [
+    {"index": 0, "instruction": "q0", "input": "", "output": "短い回答"},
+    {"index": 1, "instruction": "q1", "input": "", "output": "長い回答" * 100},
+    {"index": 2, "instruction": "q2", "input": "", "output": "短い回答2"},
+    {"index": 3, "instruction": "q3", "input": "", "output": "長い回答" * 100},
+    {"index": 4, "instruction": "q4", "input": "", "output": "短い回答3"},
+]
+
+
+def test_dataset_excludes_response_truncated_rows(reversible_tokenizer) -> None:
+    dataset = InstructionDataset(
+        reversible_tokenizer,
+        CTX_ROWS,
+        max_length=96,
+        exclude_response_truncated=True,
+        row_ids=[r["index"] for r in CTX_ROWS],
+    )
+
+    assert len(dataset) == 3
+    assert dataset.row_ids == [0, 2, 4]
+    assert dataset.stats()["excluded_response_truncated"] == 2
+    assert dataset.stats()["response_truncated"] == 0
+
+
+def test_dataset_target_examples_stops_early_and_refills(reversible_tokenizer) -> None:
+    unfiltered = InstructionDataset(
+        reversible_tokenizer, CTX_ROWS[:3], 96, row_ids=[0, 1, 2]
+    )
+    refilled = InstructionDataset(
+        reversible_tokenizer,
+        CTX_ROWS,
+        max_length=96,
+        exclude_response_truncated=True,
+        target_examples=len(unfiltered),
+        row_ids=[r["index"] for r in CTX_ROWS],
+    )
+
+    assert len(unfiltered) == 3 and unfiltered.row_ids == [0, 1, 2]
+    # Same size, the dropped truncated row replaced by the next usable row
+    assert len(refilled) == 3 and refilled.row_ids == [0, 2, 4]
+
+
+def test_load_instruction_datasets_rejects_both_limits(
+    monkeypatch, fake_tokenizer
+) -> None:
+    _patch_raw_dataset(monkeypatch, num_rows=10)
+
+    with pytest.raises(ValueError, match="not both"):
+        load_instruction_datasets(
+            fake_tokenizer,
+            dataset_id="org/data",
+            max_length=96,
+            val_ratio=0.2,
+            seed=1,
+            max_train_samples=5,
+            train_examples=5,
+        )
+
+
+def test_load_instruction_datasets_refill_keeps_size_and_records_ids(
+    monkeypatch, reversible_tokenizer
+) -> None:
+    rows = [
+        {
+            "index": i,
+            "instruction": f"q{i}",
+            "input": "",
+            "output": "長い回答" * 100 if i % 3 == 0 else f"回答{i}",
+        }
+        for i in range(60)
+    ]
+    import datasets
+
+    monkeypatch.setattr(
+        dataset_module,
+        "load_dataset",
+        lambda dataset_id, split: datasets.Dataset.from_list(rows),
+    )
+
+    def build(**kwargs):
+        return load_instruction_datasets(
+            reversible_tokenizer,
+            dataset_id="org/data",
+            max_length=96,
+            val_ratio=0.1,
+            seed=5,
+            **kwargs,
+        )
+
+    baseline_train, baseline_val = build(train_examples=20)
+    filtered_train, filtered_val = build(
+        train_examples=20, exclude_response_truncated=True
+    )
+
+    assert len(baseline_train) == len(filtered_train) == 20
+    assert filtered_train.stats()["response_truncated"] == 0
+    assert baseline_train.stats()["response_truncated"] > 0
+    assert filtered_train.stats()["excluded_response_truncated"] > 0
+    # The filtered run keeps every non-truncated baseline row and adds others
+    assert set(baseline_train.row_ids) - set(filtered_train.row_ids)
+    assert set(filtered_train.row_ids) - set(baseline_train.row_ids)
+    # Validation is untouched by the training-side filter
+    assert baseline_val.row_ids == filtered_val.row_ids

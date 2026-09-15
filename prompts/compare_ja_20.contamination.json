@@ -2,7 +2,7 @@
   "schema_version": 1,
   "ok": true,
   "prompts_file": "compare_ja_20.json",
-  "prompts_sha256": "f60e3fb8177d2cca92375fee32f25bd9464d1e67ab10b5eb97c9531d53fb21da",
+  "prompts_sha256": "86361b7b701ac6147283632b63403aa822a943ae35cd873c9d4af25b6418ac8c",
   "dataset_id": "kunishou/databricks-dolly-15k-ja",
   "dataset_revision": null,
   "dataset_rows": 15015,

@@ -102,7 +102,9 @@ def load_prompts(path: Path) -> list[dict[str, str]]:
     """Load ``{"prompts": [{"id": ..., "instruction": ..., "input": ...}, ...]}``.
 
     ``input`` is optional and is placed in the user message exactly like the
-    dataset's ``input`` field during training.
+    dataset's ``input`` field during training. ``category`` and ``coverage``
+    (in_domain / retention, see the prompt file) are passed through to
+    samples.json.
     """
     data = json.loads(path.read_text(encoding="utf-8"))
     prompts = data.get("prompts") if isinstance(data, dict) else None
@@ -117,6 +119,7 @@ def load_prompts(path: Path) -> list[dict[str, str]]:
         {
             "id": p["id"],
             "category": p.get("category") or "",
+            "coverage": p.get("coverage") or "",
             "instruction": p["instruction"],
             "input": p.get("input") or "",
         }
@@ -353,6 +356,7 @@ def run_compare(args: argparse.Namespace) -> dict[str, Any]:
         {
             "id": prompt["id"],
             "category": prompt["category"],
+            "coverage": prompt["coverage"],
             "instruction": prompt["instruction"],
             "input": prompt["input"],
             "base_output": base_text,

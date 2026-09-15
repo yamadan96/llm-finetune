@@ -260,14 +260,31 @@ class InstructionDataset(Dataset):  # pyright: ignore[reportMissingTypeArgument]
         tokenizer: PreTrainedTokenizerBase,
         rows: Iterable[Mapping[str, Any]],
         max_length: int = 512,
+        exclude_response_truncated: bool = False,
+        target_examples: int | None = None,
+        row_ids: Sequence[int] | None = None,
     ) -> None:
+        """Tokenize ``rows`` in the given order.
+
+        ``exclude_response_truncated`` drops rows whose response does not fit
+        into ``max_length`` (they would teach answers without a closing
+        ``<|im_end|>``). ``target_examples`` stops after that many usable
+        examples, so a filtered run can be refilled from the same ordered pool
+        to the same size as an unfiltered one. ``row_ids`` are the dataset row
+        indices of ``rows``; the ids actually used are kept in
+        ``self.row_ids``.
+        """
         self.samples: list[dict[str, torch.Tensor]] = []
+        self.row_ids: list[int] = []
         self.num_empty = 0
         self.num_truncated_away = 0
         self.num_with_context = 0
         self.num_context_truncated = 0
         self.num_response_truncated = 0
-        for row in rows:
+        self.num_excluded_response_truncated = 0
+        for position, row in enumerate(rows):
+            if target_examples is not None and len(self.samples) >= target_examples:
+                break
             instruction = row.get("instruction", "") or ""
             response = row.get("output", row.get("response", "")) or ""
             context = row.get("input", "") or ""
@@ -281,6 +298,11 @@ class InstructionDataset(Dataset):  # pyright: ignore[reportMissingTypeArgument]
                 self.num_truncated_away += 1
                 continue
             example, info = built
+            if exclude_response_truncated and info.response_truncated:
+                self.num_excluded_response_truncated += 1
+                continue
+            if row_ids is not None and position < len(row_ids):
+                self.row_ids.append(int(row_ids[position]))
             self.num_with_context += bool(context.strip())
             self.num_context_truncated += info.context_truncated
             self.num_response_truncated += info.response_truncated
@@ -306,6 +328,7 @@ class InstructionDataset(Dataset):  # pyright: ignore[reportMissingTypeArgument]
             "response_truncated": self.num_response_truncated,
             "skipped_empty": self.num_empty,
             "skipped_truncated": self.num_truncated_away,
+            "excluded_response_truncated": self.num_excluded_response_truncated,
         }
 
     def __len__(self) -> int:
@@ -324,6 +347,8 @@ def load_instruction_datasets(
     split: str = "train",
     max_train_samples: int | None = None,
     max_val_samples: int | None = None,
+    train_examples: int | None = None,
+    exclude_response_truncated: bool = False,
 ) -> tuple[InstructionDataset, InstructionDataset]:
     """Load the raw dataset and build seeded train/validation datasets.
 
@@ -332,15 +357,37 @@ def load_instruction_datasets(
     validation rows of a pilot run are always a subset of the full run's
     validation rows. Rows skipped during tokenization (empty or fully
     truncated) are not replaced, so the final dataset can be slightly smaller.
+
+    ``train_examples`` instead walks the same seeded order and stops once that
+    many usable training examples have been collected, so a run that drops
+    rows (``exclude_response_truncated``, applied to the training split only)
+    is refilled from the same ordered pool and keeps the size of an unfiltered
+    run. The two options are mutually exclusive.
     """
+    if train_examples is not None and max_train_samples is not None:
+        raise ValueError("Use either train_examples or max_train_samples, not both")
     # datasets>=4 no longer supports loading scripts or `trust_remote_code`
     raw = load_dataset(dataset_id, split=split)
     logger.info("Loaded %d examples from %s", len(raw), dataset_id)
 
     train_idx, val_idx = split_indices(len(raw), val_ratio, seed)
-    train_idx = limit_indices(train_idx, max_train_samples, seed)
+    if train_examples is not None:
+        # Same seeded order as limit_indices, but consumed until the target is met
+        train_idx = list(train_idx)
+        random.Random(seed).shuffle(train_idx)
+    else:
+        train_idx = limit_indices(train_idx, max_train_samples, seed)
     val_idx = limit_indices(val_idx, max_val_samples, seed)
-    train_set = InstructionDataset(tokenizer, raw.select(train_idx), max_length)
-    val_set = InstructionDataset(tokenizer, raw.select(val_idx), max_length)
+    train_set = InstructionDataset(
+        tokenizer,
+        raw.select(train_idx),
+        max_length,
+        exclude_response_truncated=exclude_response_truncated,
+        target_examples=train_examples,
+        row_ids=train_idx,
+    )
+    val_set = InstructionDataset(
+        tokenizer, raw.select(val_idx), max_length, row_ids=val_idx
+    )
     logger.info("Split: %d train / %d validation", len(train_set), len(val_set))
     return train_set, val_set

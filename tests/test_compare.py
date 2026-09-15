@@ -230,8 +230,12 @@ def test_twenty_prompt_set_extends_the_default_set_unchanged() -> None:
 
     assert len(twenty) == 20
     assert len({p["id"] for p in twenty}) == 20
-    strip = [{k: v for k, v in p.items() if k != "category"} for p in twenty[:7]]
-    assert strip == [{k: v for k, v in p.items() if k != "category"} for p in default]
+    drop = ("category", "coverage")
+    strip = [{k: v for k, v in p.items() if k not in drop} for p in twenty[:7]]
+    assert strip == [{k: v for k, v in p.items() if k not in drop} for p in default]
+    assert {p["coverage"] for p in twenty} == {"in_domain", "retention"}
+    retention = {p["id"] for p in twenty if p["coverage"] == "retention"}
+    assert {"rewrite-polite", "rewrite-plain"} <= retention
     categories = Counter(p["category"] for p in twenty)
     assert set(categories) == {
         "summarization",

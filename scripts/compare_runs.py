@@ -129,6 +129,25 @@ def run_row(run: dict[str, Any], vary: list[str]) -> dict[str, Any]:
     }
 
 
+def coverage_groups(items: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """Prompt ids grouped by the prompt set's coverage label (if any)."""
+    groups: dict[str, list[str]] = {}
+    for item in items:
+        groups.setdefault(item.get("coverage") or "unlabelled", []).append(item["id"])
+    return dict(sorted(groups.items()))
+
+
+def repetition_counts_by_coverage(
+    items: list[dict[str, Any]], key: str
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        group = item.get("coverage") or "unlabelled"
+        counts.setdefault(group, 0)
+        counts[group] += bool(repetition_findings(item[key]))
+    return dict(sorted(counts.items()))
+
+
 def judgment_counts(labels: dict[str, str], prompt_ids: list[str]) -> dict[str, Any]:
     unknown = sorted(set(labels) - set(prompt_ids))
     bad = sorted({v for v in labels.values()} - set(JUDGMENT_LABELS))
@@ -199,25 +218,54 @@ def render(
     for row in rows:
         lines.append("| " + " | ".join(_fmt(row[key]) for key, _ in columns) + " |")
 
+    groups = coverage_groups(items)
+    if len(groups) > 1:
+        lines += [
+            "",
+            "## Repetition WARNs by prompt coverage",
+            "",
+            "| run | "
+            + " | ".join(f"{g} ({len(ids)})" for g, ids in groups.items())
+            + " |",
+            "|" + "---|" * (len(groups) + 1),
+        ]
+        for run in runs:
+            counts = repetition_counts_by_coverage(
+                run["samples"]["samples"], "finetuned_output"
+            )
+            lines.append(
+                f"| {run['name']} | "
+                + " | ".join(str(counts.get(group, 0)) for group in groups)
+                + " |"
+            )
+
     if judgments is not None:
         lines += [
             "",
             "## Manual judgments (fine-tuned vs. base, per prompt)",
             "",
-            "| run | improved | degraded | same | mixed | unjudged |",
-            "|---|---|---|---|---|---|",
+            "| run | scope | improved | degraded | same | mixed | unjudged |",
+            "|---|---|---|---|---|---|---|",
         ]
-        ids = [s["id"] for s in items]
+        scopes = [("all", [s["id"] for s in items])]
+        if len(groups) > 1:
+            scopes += list(groups.items())
         for run in runs:
-            counts = judgment_counts(judgments.get(run["name"], {}), ids)
-            lines.append(
-                f"| {run['name']} | {counts['improved']} | {counts['degraded']} | "
-                f"{counts['same']} | {counts['mixed']} | {counts['unjudged']} |"
-            )
+            labels = judgments.get(run["name"], {})
+            for scope, ids in scopes:
+                counts = judgment_counts(
+                    {k: v for k, v in labels.items() if k in set(ids)}, ids
+                )
+                lines.append(
+                    f"| {run['name']} | {scope} | {counts['improved']} | "
+                    f"{counts['degraded']} | {counts['same']} | {counts['mixed']} | "
+                    f"{counts['unjudged']} |"
+                )
 
     lines += ["", "## Outputs"]
     for index, base_item in enumerate(items):
-        category = f" ({base_item['category']})" if base_item.get("category") else ""
+        labels = [base_item.get(key) for key in ("category", "coverage")]
+        category = " (" + ", ".join(filter(None, labels)) + ")" if any(labels) else ""
         lines += ["", f"### {index + 1}. {base_item['id']}{category}", ""]
         lines.append(_fence(base_item["instruction"]))
         if base_item.get("input"):

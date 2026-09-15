@@ -89,6 +89,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Use at most N raw validation rows, chosen the same way (default: all)",
     )
     p.add_argument(
+        "--train-examples",
+        type=positive_int,
+        default=None,
+        help="Collect exactly N usable training examples by walking the seeded "
+        "order (refills after filtered rows); cannot be combined with "
+        "--max-train-samples",
+    )
+    p.add_argument(
+        "--exclude-response-truncated",
+        action="store_true",
+        help="Drop training rows whose response does not fit --max-length "
+        "(they teach answers without a closing <|im_end|>); validation is "
+        "left unchanged",
+    )
+    p.add_argument(
         "--log-every",
         type=positive_int,
         default=10,
@@ -197,6 +212,8 @@ def run_training(args: argparse.Namespace, tracker: RunTracker) -> None:
         seed=args.seed,
         max_train_samples=args.max_train_samples,
         max_val_samples=args.max_val_samples,
+        train_examples=args.train_examples,
+        exclude_response_truncated=args.exclude_response_truncated,
     )
     if len(train_set) == 0:
         raise ValueError("Training set is empty")
@@ -225,6 +242,8 @@ def run_training(args: argparse.Namespace, tracker: RunTracker) -> None:
         num_val_examples=len(val_set),
         train_dataset_stats=train_set.stats(),
         val_dataset_stats=val_set.stats(),
+        train_row_ids=sorted(train_set.row_ids),
+        val_row_ids=sorted(val_set.row_ids),
         num_training_steps=num_training_steps,
         num_warmup_steps=math.ceil(num_training_steps * args.warmup_ratio),
         num_trainable_params=sum(p.numel() for p in lora_params),

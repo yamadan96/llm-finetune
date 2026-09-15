@@ -47,6 +47,7 @@ SAMPLES = {
         {
             "id": "list",
             "category": "list",
+            "coverage": "in_domain",
             "instruction": "5つ挙げて",
             "input": "",
             "base_output": "1. A案です\n2. B案です",
@@ -57,6 +58,7 @@ SAMPLES = {
         {
             "id": "sum",
             "category": "summarization",
+            "coverage": "retention",
             "instruction": "要約して",
             "input": "本文",
             "base_output": "要約です。",
@@ -107,10 +109,14 @@ def test_compare_runs_writes_table_and_side_by_side_outputs(tmp_path) -> None:
         "| lr2e-4 | 0.0002 | completed | 1.5 | 1.5 | 1.7 | 1 | 0 | 1 | 1 | 130 | 150 | 17.2 | 16.5 | abc1234 |"
         in text
     )
-    assert "| lr2e-4 | 0 | 1 | 1 | 0 | 0 |" in text
-    assert "| lr5e-5 | 0 | 0 | 0 | 0 | 2 |" in text
+    assert "| lr2e-4 | all | 0 | 1 | 1 | 0 | 0 |" in text
+    assert "| lr2e-4 | in_domain | 0 | 1 | 0 | 0 | 0 |" in text
+    assert "| lr2e-4 | retention | 0 | 0 | 1 | 0 | 0 |" in text
+    assert "| lr5e-5 | all | 0 | 0 | 0 | 0 | 2 |" in text
+    # Objective repetition WARNs are also split by coverage
+    assert "| run | in_domain (1) | retention (1) |" in text
+    assert "### 2. sum (summarization, retention)" in text
     assert "**lr2e-4** (judged degraded; duplicate lines" in text
-    assert "### 2. sum (summarization)" in text
 
 
 @pytest.mark.parametrize(
