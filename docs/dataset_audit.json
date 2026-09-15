@@ -1,0 +1,353 @@
+{
+  "schema_version": 1,
+  "dataset_id": "kunishou/databricks-dolly-15k-ja",
+  "split": "train",
+  "tokenizer": "Qwen/Qwen2.5-7B-Instruct",
+  "max_length": 512,
+  "summary": {
+    "rows": 15015,
+    "skipped": {
+      "empty": 0,
+      "truncated_away": 16
+    },
+    "short_response_tokens": 10,
+    "overall": {
+      "examples": 14999,
+      "with_input": 4596,
+      "context_truncated": 1208,
+      "response_truncated": 882,
+      "short_responses": 1047,
+      "repetitive_responses": 111,
+      "response_tokens": {
+        "p5": 8,
+        "p25": 29,
+        "p50": 63,
+        "p75": 130,
+        "p95": 345,
+        "mean": 109.96826455097006,
+        "max": 7691
+      },
+      "prompt_tokens": {
+        "p5": 31,
+        "p25": 37,
+        "p50": 47,
+        "p75": 184,
+        "p95": 582,
+        "mean": 158.1750116674445,
+        "max": 8990
+      }
+    },
+    "by_category": {
+      "brainstorming": {
+        "examples": 1768,
+        "with_input": 0,
+        "context_truncated": 0,
+        "response_truncated": 30,
+        "short_responses": 30,
+        "repetitive_responses": 15,
+        "response_tokens": {
+          "p5": 18,
+          "p25": 43,
+          "p50": 81,
+          "p75": 138,
+          "p95": 309,
+          "mean": 112.86481900452489,
+          "max": 2151
+        },
+        "prompt_tokens": {
+          "p5": 31,
+          "p25": 36,
+          "p50": 39,
+          "p75": 43,
+          "p95": 54,
+          "mean": 41.466628959276015,
+          "max": 235
+        }
+      },
+      "classification": {
+        "examples": 2131,
+        "with_input": 0,
+        "context_truncated": 0,
+        "response_truncated": 13,
+        "short_responses": 179,
+        "repetitive_responses": 25,
+        "response_tokens": {
+          "p5": 6,
+          "p25": 19,
+          "p50": 37,
+          "p75": 60,
+          "p95": 134,
+          "mean": 50.85593618019709,
+          "max": 1108
+        },
+        "prompt_tokens": {
+          "p5": 38,
+          "p25": 49,
+          "p50": 59,
+          "p75": 77,
+          "p95": 116,
+          "mean": 66.58610980760207,
+          "max": 435
+        }
+      },
+      "closed_qa": {
+        "examples": 1822,
+        "with_input": 1822,
+        "context_truncated": 374,
+        "response_truncated": 115,
+        "short_responses": 198,
+        "repetitive_responses": 1,
+        "response_tokens": {
+          "p5": 5,
+          "p25": 23,
+          "p50": 37,
+          "p75": 66,
+          "p95": 199,
+          "mean": 63.277167947310645,
+          "max": 1205
+        },
+        "prompt_tokens": {
+          "p5": 110,
+          "p25": 198,
+          "p50": 282,
+          "p75": 411,
+          "p95": 857,
+          "mean": 381.8567508232711,
+          "max": 5549
+        }
+      },
+      "creative_writing": {
+        "examples": 711,
+        "with_input": 0,
+        "context_truncated": 0,
+        "response_truncated": 105,
+        "short_responses": 5,
+        "repetitive_responses": 18,
+        "response_tokens": {
+          "p5": 39,
+          "p25": 116,
+          "p50": 185,
+          "p75": 331,
+          "p95": 803,
+          "mean": 279.7651195499297,
+          "max": 2694
+        },
+        "prompt_tokens": {
+          "p5": 31,
+          "p25": 37,
+          "p50": 45,
+          "p75": 55,
+          "p95": 91,
+          "mean": 50.379746835443036,
+          "max": 271
+        }
+      },
+      "general_qa": {
+        "examples": 2182,
+        "with_input": 0,
+        "context_truncated": 0,
+        "response_truncated": 96,
+        "short_responses": 23,
+        "repetitive_responses": 13,
+        "response_tokens": {
+          "p5": 31,
+          "p25": 78,
+          "p50": 124,
+          "p75": 197,
+          "p95": 433,
+          "mean": 164.06874427131072,
+          "max": 2581
+        },
+        "prompt_tokens": {
+          "p5": 30,
+          "p25": 34,
+          "p50": 37,
+          "p75": 42,
+          "p95": 61,
+          "mean": 42.10082493125573,
+          "max": 504
+        }
+      },
+      "information_extraction": {
+        "examples": 1512,
+        "with_input": 1512,
+        "context_truncated": 439,
+        "response_truncated": 189,
+        "short_responses": 83,
+        "repetitive_responses": 10,
+        "response_tokens": {
+          "p5": 9,
+          "p25": 25,
+          "p50": 44,
+          "p75": 89,
+          "p95": 385,
+          "mean": 103.41666666666667,
+          "max": 2643
+        },
+        "prompt_tokens": {
+          "p5": 123,
+          "p25": 216,
+          "p50": 316,
+          "p75": 493,
+          "p95": 1038,
+          "mean": 424.9259259259259,
+          "max": 5313
+        }
+      },
+      "open_qa": {
+        "examples": 3611,
+        "with_input": 0,
+        "context_truncated": 0,
+        "response_truncated": 52,
+        "short_responses": 523,
+        "repetitive_responses": 19,
+        "response_tokens": {
+          "p5": 6,
+          "p25": 20,
+          "p50": 50,
+          "p75": 112,
+          "p95": 279,
+          "mean": 87.28247022985323,
+          "max": 4238
+        },
+        "prompt_tokens": {
+          "p5": 29,
+          "p25": 33,
+          "p50": 37,
+          "p75": 42,
+          "p95": 52,
+          "mean": 38.503184713375795,
+          "max": 106
+        }
+      },
+      "summarization": {
+        "examples": 1262,
+        "with_input": 1262,
+        "context_truncated": 395,
+        "response_truncated": 282,
+        "short_responses": 6,
+        "repetitive_responses": 10,
+        "response_tokens": {
+          "p5": 26,
+          "p25": 58,
+          "p50": 103,
+          "p75": 163,
+          "p95": 418,
+          "mean": 156.69572107765453,
+          "max": 7691
+        },
+        "prompt_tokens": {
+          "p5": 110,
+          "p25": 195,
+          "p50": 298,
+          "p75": 475,
+          "p95": 1187,
+          "mean": 437.6458003169572,
+          "max": 8990
+        }
+      }
+    },
+    "repetition_kinds": {
+      "repeated clauses": 78,
+      "looping phrases": 6,
+      "duplicate lines": 29
+    },
+    "list_instructions": {
+      "examples": 1577,
+      "with_input": 584,
+      "context_truncated": 236,
+      "response_truncated": 112,
+      "short_responses": 44,
+      "repetitive_responses": 12,
+      "response_tokens": {
+        "p5": 14,
+        "p25": 36,
+        "p50": 64,
+        "p75": 119,
+        "p95": 268,
+        "mean": 104.8706404565631,
+        "max": 7067
+      },
+      "prompt_tokens": {
+        "p5": 36,
+        "p25": 41,
+        "p50": 52,
+        "p75": 298,
+        "p95": 774,
+        "mean": 224.37539632213063,
+        "max": 5071
+      },
+      "shapes": {
+        "inline_list": 682,
+        "marked_list": 610,
+        "multi_line": 222,
+        "single_sentence": 63
+      },
+      "responses_with_repeated_lines": 8,
+      "items": {
+        "p5": 2,
+        "p25": 4,
+        "p50": 5,
+        "p75": 8,
+        "p95": 15,
+        "mean": 6.980976537729867,
+        "max": 533
+      },
+      "requested_count": {
+        "instructions_with_a_count": 433,
+        "exact": 209,
+        "fewer": 57,
+        "more": 167,
+        "single_sentence_responses": 21
+      },
+      "by_category": {
+        "information_extraction": 360,
+        "brainstorming": 572,
+        "summarization": 171,
+        "open_qa": 238,
+        "classification": 97,
+        "general_qa": 60,
+        "creative_writing": 26,
+        "closed_qa": 53
+      }
+    },
+    "rewrite_instructions": {
+      "examples": 79,
+      "with_input": 60,
+      "context_truncated": 33,
+      "response_truncated": 16,
+      "short_responses": 0,
+      "repetitive_responses": 0,
+      "response_tokens": {
+        "p5": 30,
+        "p25": 65,
+        "p50": 115,
+        "p75": 146,
+        "p95": 323,
+        "mean": 125.15189873417721,
+        "max": 411
+      },
+      "prompt_tokens": {
+        "p5": 41,
+        "p25": 184,
+        "p50": 343,
+        "p75": 591,
+        "p95": 1043,
+        "mean": 430.27848101265823,
+        "max": 1499
+      },
+      "overlap": {
+        "rewritten": 60,
+        "no_input": 19
+      },
+      "by_category": {
+        "summarization": 53,
+        "general_qa": 11,
+        "information_extraction": 4,
+        "creative_writing": 7,
+        "closed_qa": 3,
+        "brainstorming": 1
+      }
+    }
+  }
+}
