@@ -91,6 +91,8 @@ def smoke_run(tmp_path, monkeypatch, fake_tokenizer):
         seed,
         max_train_samples,
         max_val_samples,
+        train_examples,
+        exclude_response_truncated,
     ):
         datasets_built["train"] = InstructionDataset(tokenizer, ROWS[:6], max_length)
         datasets_built["val"] = InstructionDataset(tokenizer, ROWS[6:], max_length)
@@ -120,6 +122,9 @@ def test_train_smoke_writes_best_checkpoint_config_and_metrics(
     assert metrics["config"]["num_training_steps"] == 6
     assert metrics["config"]["max_train_samples"] is None
     assert metrics["config"]["max_val_samples"] is None
+    assert metrics["config"]["train_examples"] is None
+    assert metrics["config"]["exclude_response_truncated"] is False
+    assert metrics["config"]["train_row_ids"] == []
     assert metrics["best"]["metric"] == "val_loss"
     assert (tmp_path / "lora_weights.pt").exists()
     assert load_lora_config(tmp_path / LORA_CONFIG_FILENAME) == {
