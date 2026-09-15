@@ -94,6 +94,41 @@ If the pilot fails, fix the cause (for example `--batch-size 1` or a smaller
 Any changed option is recorded in `metrics.json` `config`, and the full run
 must use the same options.
 
+### Pilot ablations
+
+When a pilot passes the gate but `samples.md` shows degraded answers, compare
+pilots that differ in **one** variable before any full run. Keep the subset,
+epochs, seed, split, LoRA settings, prompt set and generation settings fixed,
+and evaluate every run on the same fixed 20-prompt set:
+
+```bash
+CHECKPOINT_DIR=./checkpoints/pilot-500-lr1e-4 uv run python -m src.train \
+  --epochs 1 --batch-size 2 --rank 16 --alpha 32 --lr 1e-4 \
+  --max-train-samples 500 --max-val-samples 100 --log-every 10
+
+# For every run in the comparison (including an existing baseline run)
+uv run python -m src.compare --checkpoint-dir ./checkpoints/pilot-500-lr1e-4 \
+  --prompts prompts/compare_ja_20.json --output-dir ./checkpoints/pilot-500-lr1e-4/eval20 \
+  --max-new-tokens 256
+
+uv run python scripts/compare_runs.py ./checkpoints/pilot-500-ctx \
+  ./checkpoints/pilot-500-lr1e-4 ./checkpoints/pilot-500-lr5e-5 \
+  --vary lr --samples eval20/samples.json --judgments ./checkpoints/lr-judgments.json \
+  -o ./checkpoints/lr-comparison.md
+```
+
+`compare_runs.py` exits with status 1 if the runs differ in anything other
+than `--vary` (training config, prompt set, generation settings, base model).
+Its table has no ranking column: do not pick the run with the lowest loss by
+default. Read the side-by-side outputs, record per-prompt judgments of the
+fine-tuned answer against the base answer (`improved`, `degraded`, `same`,
+`mixed`) and weigh repetition WARNs and degraded answers against the loss.
+
+`prompts/compare_ja_20.json` contains the 7 default prompts unchanged plus 13
+more, with at least two prompts each for summarization, classification,
+rewriting, QA, list generation, reasoning and arithmetic. Its contamination
+report is `prompts/compare_ja_20.contamination.json`.
+
 ## 4. Full run
 
 ```bash

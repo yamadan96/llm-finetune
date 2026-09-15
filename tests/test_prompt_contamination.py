@@ -83,12 +83,13 @@ def test_ngrams(text: str, expected: set[str]) -> None:
     assert contamination.ngrams(text) == expected
 
 
-def test_committed_report_matches_prompt_set() -> None:
+@pytest.mark.parametrize("name", ["compare_ja", "compare_ja_20"])
+def test_committed_report_matches_prompt_set(name: str) -> None:
     import hashlib
 
-    prompts = REPO_ROOT / "prompts" / "compare_ja.json"
+    prompts = REPO_ROOT / "prompts" / f"{name}.json"
     report = json.loads(
-        (REPO_ROOT / "prompts" / "compare_ja.contamination.json").read_text()
+        (REPO_ROOT / "prompts" / f"{name}.contamination.json").read_text()
     )
 
     assert report["ok"] is True

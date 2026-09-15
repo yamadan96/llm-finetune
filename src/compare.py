@@ -114,7 +114,12 @@ def load_prompts(path: Path) -> list[dict[str, str]]:
     if len(set(ids)) != len(ids):
         raise ValueError("Prompt ids must be unique")
     return [
-        {"id": p["id"], "instruction": p["instruction"], "input": p.get("input") or ""}
+        {
+            "id": p["id"],
+            "category": p.get("category") or "",
+            "instruction": p["instruction"],
+            "input": p.get("input") or "",
+        }
         for p in prompts
     ]
 
@@ -347,6 +352,7 @@ def run_compare(args: argparse.Namespace) -> dict[str, Any]:
     samples = [
         {
             "id": prompt["id"],
+            "category": prompt["category"],
             "instruction": prompt["instruction"],
             "input": prompt["input"],
             "base_output": base_text,
