@@ -409,6 +409,7 @@ def load_instruction_datasets(
     list_rows: int | None = None,
     response_tokens_min: int | None = None,
     response_tokens_max: int | None = None,
+    train_row_ids: Sequence[int] | None = None,
 ) -> tuple[InstructionDataset, InstructionDataset]:
     """Load the raw dataset and build seeded train/validation datasets.
 
@@ -424,12 +425,27 @@ def load_instruction_datasets(
     is refilled from the same ordered pool and keeps the size of an unfiltered
     run. The two options are mutually exclusive.
 
+    ``train_row_ids`` trains on exactly those dataset rows (they must belong to
+    the training split of this seed), which is how selection experiments hand a
+    precomputed split to training; it cannot be combined with the other
+    selection options.
+
     ``list_rows`` fixes how many training examples are list instructions (the
     rest come from the same order), making the amount of list supervision an
     independent variable.
     """
     if train_examples is not None and max_train_samples is not None:
         raise ValueError("Use either train_examples or max_train_samples, not both")
+    if train_row_ids is not None and (
+        train_examples is not None
+        or max_train_samples is not None
+        or list_rows is not None
+        or response_tokens_min is not None
+        or response_tokens_max is not None
+    ):
+        raise ValueError(
+            "train_row_ids cannot be combined with other selection options"
+        )
     if list_rows is not None:
         if train_examples is None:
             raise ValueError("list_rows requires train_examples")
@@ -440,7 +456,15 @@ def load_instruction_datasets(
     logger.info("Loaded %d examples from %s", len(raw), dataset_id)
 
     train_idx, val_idx = split_indices(len(raw), val_ratio, seed)
-    if train_examples is not None:
+    if train_row_ids is not None:
+        unknown = set(train_row_ids) - set(train_idx)
+        if unknown:
+            raise ValueError(
+                f"{len(unknown)} of the given train_row_ids are not in the "
+                "training split of this seed/val_ratio"
+            )
+        train_idx = list(train_row_ids)
+    elif train_examples is not None:
         # Same seeded order as limit_indices, but consumed until the target is met
         train_idx = list(train_idx)
         random.Random(seed).shuffle(train_idx)
