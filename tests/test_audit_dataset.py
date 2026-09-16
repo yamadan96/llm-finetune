@@ -28,36 +28,27 @@ def test_quantiles_and_empty_input() -> None:
 
 
 @pytest.mark.parametrize(
-    ("instruction", "expected"),
+    ("instruction", "response", "shape", "items"),
     [
-        ("工夫を5つ挙げてください", 5),
-        ("３点にまとめてください", 3),
-        ("три", None),
-        ("理由を三つ述べてください", 3),
-        ("箇条書きで挙げてください", None),
+        ("3つ挙げてください", "1. りんご\n2. みかん\n3. ぶどう", "marked_list", 3),
+        ("挙げてください", "りんご、みかん、ぶどう", "inline_list", 3),
+        ("リストにしてください", "最初の段落です\n次の段落です", "multi_line", 2),
+        ("いくつか挙げてください", "ひとつの文だけです。", "prose", 1),
     ],
 )
-def test_requested_item_count(instruction: str, expected) -> None:
-    assert audit.requested_item_count(instruction) == expected
-
-
-@pytest.mark.parametrize(
-    ("response", "shape", "items"),
-    [
-        ("1. りんご\n2. みかん\n3. ぶどう", "marked_list", 3),
-        ("りんご、みかん、ぶどう", "inline_list", 3),
-        ("最初の段落です\n次の段落です", "multi_line", 2),
-        ("ひとつの文だけです。", "single_sentence", 1),
-    ],
-)
-def test_list_response_shape(response: str, shape: str, items: int) -> None:
-    result = audit.list_response_shape(response)
+def test_list_response_shape(
+    instruction: str, response: str, shape: str, items: int
+) -> None:
+    result = audit.list_response_shape(instruction, response)
 
     assert (result["shape"], result["items"]) == (shape, items)
 
 
 def test_list_response_shape_counts_repeated_lines() -> None:
-    assert audit.list_response_shape("- 同じ項目\n- 同じ項目")["repeated_lines"] == 1
+    result = audit.list_response_shape("挙げてください", "- 同じ項目\n- 同じ項目")
+
+    assert result["repeated_lines"] == 1
+    assert result["duplicate_items"] == 1
 
 
 @pytest.mark.parametrize(
@@ -144,5 +135,5 @@ def test_committed_audit_matches_the_script_schema() -> None:
         "marked_list",
         "inline_list",
         "multi_line",
-        "single_sentence",
+        "prose",
     }

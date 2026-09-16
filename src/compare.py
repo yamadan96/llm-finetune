@@ -120,6 +120,7 @@ def load_prompts(path: Path) -> list[dict[str, str]]:
             "id": p["id"],
             "category": p.get("category") or "",
             "coverage": p.get("coverage") or "",
+            "expected_items": p.get("expected_items"),
             "instruction": p["instruction"],
             "input": p.get("input") or "",
         }
@@ -357,6 +358,7 @@ def run_compare(args: argparse.Namespace) -> dict[str, Any]:
             "id": prompt["id"],
             "category": prompt["category"],
             "coverage": prompt["coverage"],
+            "expected_items": prompt["expected_items"],
             "instruction": prompt["instruction"],
             "input": prompt["input"],
             "base_output": base_text,

@@ -253,62 +253,64 @@
       "duplicate lines": 29
     },
     "list_instructions": {
-      "examples": 1577,
-      "with_input": 584,
-      "context_truncated": 236,
-      "response_truncated": 112,
-      "short_responses": 44,
-      "repetitive_responses": 12,
+      "examples": 1136,
+      "with_input": 484,
+      "context_truncated": 207,
+      "response_truncated": 93,
+      "short_responses": 9,
+      "repetitive_responses": 9,
       "response_tokens": {
-        "p5": 14,
-        "p25": 36,
-        "p50": 64,
+        "p5": 19,
+        "p25": 37,
+        "p50": 66,
         "p75": 119,
-        "p95": 268,
-        "mean": 104.8706404565631,
+        "p95": 265,
+        "mean": 107.95862676056338,
         "max": 7067
       },
       "prompt_tokens": {
-        "p5": 36,
-        "p25": 41,
-        "p50": 52,
-        "p75": 298,
-        "p95": 774,
-        "mean": 224.37539632213063,
+        "p5": 37,
+        "p25": 42,
+        "p50": 53,
+        "p75": 340,
+        "p95": 901,
+        "mean": 256.77904929577466,
         "max": 5071
       },
       "shapes": {
-        "inline_list": 682,
-        "marked_list": 610,
-        "multi_line": 222,
-        "single_sentence": 63
+        "inline_list": 250,
+        "marked_list": 509,
+        "multi_line": 149,
+        "prose": 228
       },
-      "responses_with_repeated_lines": 8,
+      "structured_responses": 908,
+      "responses_with_duplicate_items": 38,
+      "responses_with_repeated_lines": 7,
       "items": {
-        "p5": 2,
-        "p25": 4,
+        "p5": 1,
+        "p25": 2,
         "p50": 5,
         "p75": 8,
-        "p95": 15,
-        "mean": 6.980976537729867,
+        "p95": 14,
+        "mean": 6.389964788732394,
         "max": 533
       },
       "requested_count": {
-        "instructions_with_a_count": 433,
-        "exact": 209,
-        "fewer": 57,
-        "more": 167,
-        "single_sentence_responses": 21
+        "instructions_with_a_count": 128,
+        "exact": 69,
+        "fewer": 2,
+        "more": 20,
+        "prose": 37
       },
       "by_category": {
-        "information_extraction": 360,
-        "brainstorming": 572,
-        "summarization": 171,
-        "open_qa": 238,
-        "classification": 97,
-        "general_qa": 60,
-        "creative_writing": 26,
-        "closed_qa": 53
+        "information_extraction": 315,
+        "brainstorming": 439,
+        "summarization": 149,
+        "open_qa": 174,
+        "classification": 21,
+        "closed_qa": 20,
+        "creative_writing": 9,
+        "general_qa": 9
       }
     },
     "rewrite_instructions": {

@@ -2,7 +2,7 @@
 
 import logging
 import random
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,6 +10,8 @@ import torch
 from datasets import load_dataset
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizerBase
+
+from .list_rules import is_list_instruction
 
 logger = logging.getLogger(__name__)
 
@@ -263,6 +265,7 @@ class InstructionDataset(Dataset):  # pyright: ignore[reportMissingTypeArgument]
         exclude_response_truncated: bool = False,
         target_examples: int | None = None,
         row_ids: Sequence[int] | None = None,
+        row_filter: Callable[[Mapping[str, Any]], bool] | None = None,
     ) -> None:
         """Tokenize ``rows`` in the given order.
 
@@ -270,10 +273,14 @@ class InstructionDataset(Dataset):  # pyright: ignore[reportMissingTypeArgument]
         into ``max_length`` (they would teach answers without a closing
         ``<|im_end|>``). ``target_examples`` stops after that many usable
         examples, so a filtered run can be refilled from the same ordered pool
-        to the same size as an unfiltered one. ``row_ids`` are the dataset row
+        to the same size as an unfiltered one. ``row_filter`` keeps only the rows
+        it accepts, which is how a split with a fixed number of
+        list-instruction rows is built. ``row_ids`` are the dataset row
         indices of ``rows``; the ids actually used are kept in
         ``self.row_ids``.
         """
+        self.tokenizer = tokenizer
+        self.max_length = max_length
         self.samples: list[dict[str, torch.Tensor]] = []
         self.row_ids: list[int] = []
         self.num_empty = 0
@@ -285,6 +292,8 @@ class InstructionDataset(Dataset):  # pyright: ignore[reportMissingTypeArgument]
         for position, row in enumerate(rows):
             if target_examples is not None and len(self.samples) >= target_examples:
                 break
+            if row_filter is not None and not row_filter(row):
+                continue
             instruction = row.get("instruction", "") or ""
             response = row.get("output", row.get("response", "")) or ""
             context = row.get("input", "") or ""
@@ -331,6 +340,30 @@ class InstructionDataset(Dataset):  # pyright: ignore[reportMissingTypeArgument]
             "excluded_response_truncated": self.num_excluded_response_truncated,
         }
 
+    @classmethod
+    def merged(cls, parts: Sequence["InstructionDataset"]) -> "InstructionDataset":
+        """One dataset from several parts, ordered by dataset row id."""
+        merged = cls(parts[0].tokenizer, [], parts[0].max_length)
+        pairs = [
+            (row_id, sample)
+            for part in parts
+            for row_id, sample in zip(part.row_ids, part.samples, strict=True)
+        ]
+        pairs.sort(key=lambda pair: pair[0])
+        merged.row_ids = [row_id for row_id, _ in pairs]
+        merged.samples = [sample for _, sample in pairs]
+        for part in parts:
+            for name in (
+                "num_empty",
+                "num_truncated_away",
+                "num_with_context",
+                "num_context_truncated",
+                "num_response_truncated",
+                "num_excluded_response_truncated",
+            ):
+                setattr(merged, name, getattr(merged, name) + getattr(part, name))
+        return merged
+
     def __len__(self) -> int:
         return len(self.samples)
 
@@ -349,6 +382,7 @@ def load_instruction_datasets(
     max_val_samples: int | None = None,
     train_examples: int | None = None,
     exclude_response_truncated: bool = False,
+    list_rows: int | None = None,
 ) -> tuple[InstructionDataset, InstructionDataset]:
     """Load the raw dataset and build seeded train/validation datasets.
 
@@ -363,9 +397,18 @@ def load_instruction_datasets(
     rows (``exclude_response_truncated``, applied to the training split only)
     is refilled from the same ordered pool and keeps the size of an unfiltered
     run. The two options are mutually exclusive.
+
+    ``list_rows`` fixes how many training examples are list instructions (the
+    rest come from the same order), making the amount of list supervision an
+    independent variable.
     """
     if train_examples is not None and max_train_samples is not None:
         raise ValueError("Use either train_examples or max_train_samples, not both")
+    if list_rows is not None:
+        if train_examples is None:
+            raise ValueError("list_rows requires train_examples")
+        if list_rows > train_examples:
+            raise ValueError("list_rows cannot exceed train_examples")
     # datasets>=4 no longer supports loading scripts or `trust_remote_code`
     raw = load_dataset(dataset_id, split=split)
     logger.info("Loaded %d examples from %s", len(raw), dataset_id)
@@ -378,14 +421,35 @@ def load_instruction_datasets(
     else:
         train_idx = limit_indices(train_idx, max_train_samples, seed)
     val_idx = limit_indices(val_idx, max_val_samples, seed)
-    train_set = InstructionDataset(
-        tokenizer,
-        raw.select(train_idx),
-        max_length,
-        exclude_response_truncated=exclude_response_truncated,
-        target_examples=train_examples,
-        row_ids=train_idx,
-    )
+
+    def build_train(target: int | None, row_filter=None) -> InstructionDataset:
+        return InstructionDataset(
+            tokenizer,
+            raw.select(train_idx),
+            max_length,
+            exclude_response_truncated=exclude_response_truncated,
+            target_examples=target,
+            row_ids=train_idx,
+            row_filter=row_filter,
+        )
+
+    def is_list_row(row: Mapping[str, Any]) -> bool:
+        return is_list_instruction(row.get("instruction", "") or "")
+
+    if list_rows is None:
+        train_set = build_train(train_examples)
+    else:
+        # Same ordered pool, but with a fixed number of list-instruction rows
+        list_part = build_train(list_rows, is_list_row)
+        rest = build_train(
+            train_examples - len(list_part), lambda row: not is_list_row(row)
+        )
+        train_set = InstructionDataset.merged([list_part, rest])
+        logger.info(
+            "List supervision: %d of %d training examples are list instructions",
+            len(list_part),
+            len(train_set),
+        )
     val_set = InstructionDataset(
         tokenizer, raw.select(val_idx), max_length, row_ids=val_idx
     )

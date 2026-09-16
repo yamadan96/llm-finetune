@@ -42,37 +42,21 @@ from src.dataset import (
     format_response,
 )
 from src.evidence import public_identifier, write_json
+from src.list_rules import (
+    is_list_instruction,
+    list_answer_quality,
+    requested_item_count,
+)
 from src.model import DEFAULT_BASE_MODEL
 from src.text_checks import duplicate_line_stats, repetition_findings
 
 SCHEMA_VERSION = 1
 QUANTILES = (5, 25, 50, 75, 95)
-LIST_INSTRUCTION_RE = re.compile(
-    r"箇条書き|リスト|列挙|挙げてください|挙げよ|並べてください|"
-    r"[0-9０-９一二三四五六七八九十]+\s*(?:つ|点|個|項目)"
-)
 REWRITE_INSTRUCTION_RE = re.compile(
     r"書き換え|書き直|言い換え|書きかえ|直してください|修正してください|"
     r"丁寧|敬語|やさしい言葉|わかりやすく|分かりやすく|要約"
 )
-LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+•・●]|\d+[.)．、]|[（(]?\d+[)）])\s*")
-# "5つ", "3点", "２個" ... in an instruction: how many items were requested
-REQUESTED_COUNT_RE = re.compile(
-    r"([0-9０-９一二三四五六七八九十]+)\s*(?:つ|点|個|項目)"
-)
-INLINE_SEPARATOR_RE = re.compile(r"[、,，･・]|\s/\s")
-KANJI_DIGITS = {
-    "一": 1,
-    "二": 2,
-    "三": 3,
-    "四": 4,
-    "五": 5,
-    "六": 6,
-    "七": 7,
-    "八": 8,
-    "九": 9,
-    "十": 10,
-}
+QUOTED_RE = re.compile(r"『(.+?)』|「(.+?)」")
 NEAR_IDENTICAL_RATIO = 0.9
 OVERLAP_COMPARE_CHARS = 400
 
@@ -107,47 +91,20 @@ def normalize(text: str) -> str:
     return "".join(unicodedata.normalize("NFKC", text).split())
 
 
-def requested_item_count(instruction: str) -> int | None:
-    """The number of items an instruction asks for, if it states one."""
-    match = REQUESTED_COUNT_RE.search(unicodedata.normalize("NFKC", instruction))
-    if not match:
-        return None
-    text = match.group(1)
-    if text.isdigit():
-        return int(text)
-    if len(text) == 1 and text in KANJI_DIGITS:
-        return KANJI_DIGITS[text]
-    return None
+def quoted_passages(text: str) -> list[str]:
+    return [next(g for g in m.groups() if g) for m in QUOTED_RE.finditer(text)]
 
 
-def list_response_shape(response: str) -> dict[str, Any]:
-    """How list-like a teacher response is.
-
-    A single line with separators (``、`` or ``,``) counts as an inline list,
-    because many instructions ask for a comma-separated enumeration.
-    """
-    lines = [line for line in response.splitlines() if line.strip()]
-    marked = [line for line in lines if LIST_ITEM_RE.match(line)]
-    inline_items = (
-        len([part for part in INLINE_SEPARATOR_RE.split(lines[0]) if part.strip()])
-        if len(lines) == 1
-        else 0
-    )
-    if len(marked) >= 2:
-        shape, items = "marked_list", len(marked)
-    elif len(lines) >= 2:
-        shape, items = "multi_line", len(lines)
-    elif inline_items >= 2:
-        shape, items = "inline_list", inline_items
-    else:
-        shape, items = "single_sentence", 1
+def list_response_shape(instruction: str, response: str) -> dict[str, Any]:
+    """Shared list-answer rules plus the duplicate-line count."""
+    quality = list_answer_quality(instruction, response)
     stats = duplicate_line_stats(response)
     return {
-        "lines": len(lines),
-        "marked_items": len(marked),
-        "shape": shape,
-        "items": items,
-        "single_line": len(lines) <= 1,
+        "shape": quality["shape"],
+        "items": quality["items"],
+        "structured": quality["structured"],
+        "count_mismatch": quality["count_mismatch"],
+        "duplicate_items": quality["duplicate_items"],
         "repeated_lines": int(stats["repeated_lines"]),
     }
 
@@ -194,7 +151,7 @@ def audit_row(
             "prompt_tokens": prompt_tokens,
         }
     info = built[1]
-    is_list = bool(LIST_INSTRUCTION_RE.search(instruction))
+    is_list = is_list_instruction(instruction)
     requested = requested_item_count(instruction) if is_list else None
     is_rewrite = bool(REWRITE_INSTRUCTION_RE.search(instruction))
     return {
@@ -210,7 +167,7 @@ def audit_row(
         "repetition": repetition_findings(response),
         "list_instruction": is_list,
         "rewrite_instruction": is_rewrite,
-        "list_shape": list_response_shape(response) if is_list else None,
+        "list_shape": (list_response_shape(instruction, response) if is_list else None),
         "requested_items": requested,
         "rewrite_overlap": rewrite_overlap(context, response) if is_rewrite else None,
     }
@@ -256,6 +213,12 @@ def summarize(rows: list[dict[str, Any]], short_response_tokens: int) -> dict[st
         "list_instructions": {
             **group(list_rows),
             "shapes": dict(Counter(r["list_shape"]["shape"] for r in list_rows)),
+            "structured_responses": sum(
+                r["list_shape"]["structured"] for r in list_rows
+            ),
+            "responses_with_duplicate_items": sum(
+                r["list_shape"]["duplicate_items"] > 0 for r in list_rows
+            ),
             "responses_with_repeated_lines": sum(
                 r["list_shape"]["repeated_lines"] > 0 for r in list_rows
             ),
@@ -282,15 +245,19 @@ def _requested_count_summary(list_rows: list[dict[str, Any]]) -> dict[str, Any]:
     for row in asked:
         items = row["list_shape"]["items"]
         requested = row["requested_items"]
-        counts[
-            "exact" if items == requested else "fewer" if items < requested else "more"
-        ] += 1
+        if not row["list_shape"]["structured"]:
+            counts["prose"] += 1
+        else:
+            counts[
+                "exact"
+                if items == requested
+                else "fewer"
+                if items < requested
+                else "more"
+            ] += 1
     return {
         "instructions_with_a_count": len(asked),
-        **{key: counts[key] for key in ("exact", "fewer", "more")},
-        "single_sentence_responses": sum(
-            r["list_shape"]["shape"] == "single_sentence" for r in asked
-        ),
+        **{key: counts[key] for key in ("exact", "fewer", "more", "prose")},
     }
 
 
@@ -364,15 +331,20 @@ def render_markdown(report: dict[str, Any]) -> str:
         + ", ".join(
             f"{k} {_pct(v, listed)}" for k, v in sorted(list_rows["shapes"].items())
         ),
-        f"- response repeats a line: {_pct(list_rows['responses_with_repeated_lines'], listed)}",
+        f"- structured (>= 2 items): {_pct(list_rows['structured_responses'], listed)}"
+        f", with duplicate items: "
+        f"{_pct(list_rows['responses_with_duplicate_items'], listed)}",
+        f"- response repeats a line: "
+        f"{_pct(list_rows['responses_with_repeated_lines'], listed)}",
         f"- items per response: p50={list_rows['items']['p50']:g}, "
         f"p95={list_rows['items']['p95']:g}",
         "- instructions that ask for a specific number of items: "
         f"{_pct(list_rows['requested_count']['instructions_with_a_count'], listed)}; "
         f"response has exactly that many items "
         f"{_pct(list_rows['requested_count']['exact'], list_rows['requested_count']['instructions_with_a_count'])}, "
-        f"fewer {list_rows['requested_count']['fewer']}, more {list_rows['requested_count']['more']}, "
-        f"a single sentence {list_rows['requested_count']['single_sentence_responses']}",
+        f"fewer {list_rows['requested_count']['fewer']}, "
+        f"more {list_rows['requested_count']['more']}, "
+        f"prose {list_rows['requested_count']['prose']}",
         f"- response tokens: p50={list_rows['response_tokens']['p50']:g}, "
         f"p95={list_rows['response_tokens']['p95']:g}",
         "",

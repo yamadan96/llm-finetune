@@ -1,0 +1,114 @@
+{
+  "description": "Fixed list evaluation set. Every prompt asks for an enumeration; eight state an explicit number of items (expected_items) and four ask for items extracted from a given input. Hand-written for this repository, not taken from the training dataset. Metrics are computed by scripts/list_metrics.py: structured-answer rate, requested-count satisfaction, duplicate items and generation termination. The set must not change between the runs of a comparison.",
+  "prompts": [
+    {
+      "id": "count-3-benefits",
+      "category": "list",
+      "coverage": "in_domain",
+      "instruction": "朝の散歩を習慣にすることの利点を3つ挙げてください。",
+      "expected_items": 3
+    },
+    {
+      "id": "count-5-kitchen",
+      "category": "list",
+      "coverage": "in_domain",
+      "instruction": "はじめて一人暮らしをする人が最初に買うべき台所用品を5つ挙げてください。",
+      "expected_items": 5
+    },
+    {
+      "id": "count-4-presentation",
+      "category": "list",
+      "coverage": "in_domain",
+      "instruction": "社内プレゼンを分かりやすくする工夫を4つ挙げてください。",
+      "expected_items": 4
+    },
+    {
+      "id": "count-6-travel",
+      "category": "list",
+      "coverage": "in_domain",
+      "instruction": "日帰り登山に持っていく装備を6つ挙げてください。",
+      "expected_items": 6
+    },
+    {
+      "id": "count-3-bug",
+      "category": "list",
+      "coverage": "in_domain",
+      "instruction": "プログラムのバグを見つけたときに最初に確認すべきことを3つ挙げてください。",
+      "expected_items": 3
+    },
+    {
+      "id": "count-5-onboarding",
+      "category": "list",
+      "coverage": "in_domain",
+      "instruction": "新しいチームに入った人が最初の1週間ですべきことを5つ挙げてください。",
+      "expected_items": 5
+    },
+    {
+      "id": "count-4-savemoney",
+      "category": "list",
+      "coverage": "in_domain",
+      "instruction": "毎月の固定費を下げる方法を4つ挙げてください。",
+      "expected_items": 4
+    },
+    {
+      "id": "count-3-interview",
+      "category": "list",
+      "coverage": "in_domain",
+      "instruction": "採用面接で候補者に聞くとよい質問を3つ挙げてください。",
+      "expected_items": 3
+    },
+    {
+      "id": "open-cafe-checks",
+      "category": "list",
+      "coverage": "in_domain",
+      "instruction": "カフェで作業する場所を選ぶときに確認する点を箇条書きで挙げてください。"
+    },
+    {
+      "id": "open-rainy-day",
+      "category": "list",
+      "coverage": "in_domain",
+      "instruction": "雨の日の休日に家でできる過ごし方をリストアップしてください。"
+    },
+    {
+      "id": "open-study-tools",
+      "category": "list",
+      "coverage": "in_domain",
+      "instruction": "資格試験の勉強に使える道具や教材を列挙してください。"
+    },
+    {
+      "id": "open-team-rules",
+      "category": "list",
+      "coverage": "in_domain",
+      "instruction": "少人数チームで決めておくとよいルールを箇条書きで挙げてください。"
+    },
+    {
+      "id": "extract-tasks",
+      "category": "list",
+      "coverage": "in_domain",
+      "instruction": "次の連絡に含まれる「やるべきこと」を箇条書きで挙げてください。",
+      "input": "明日の展示会について共有します。受付名簿を印刷しておいてください。パンフレットは50部ずつ各ブースに配ってください。終了後はアンケート用紙を回収し、担当者に渡してください。"
+    },
+    {
+      "id": "extract-ingredients",
+      "category": "list",
+      "coverage": "in_domain",
+      "instruction": "次のレシピ文から材料だけを箇条書きで挙げてください。",
+      "input": "フライパンに油をひき、鶏もも肉を焼きます。焼き色がついたら玉ねぎとにんじんを加え、水と塩こしょうで味を調えます。仕上げにパセリを散らします。"
+    },
+    {
+      "id": "extract-3-dates",
+      "category": "list",
+      "coverage": "in_domain",
+      "instruction": "次の案内に出てくる日付を3つ挙げてください。",
+      "input": "受付開始は4月1日です。書類の提出締切は5月15日で、面接は6月3日に行います。結果は6月中旬に通知します。",
+      "expected_items": 3
+    },
+    {
+      "id": "extract-features",
+      "category": "list",
+      "coverage": "in_domain",
+      "instruction": "次の説明文から、この製品の特徴を箇条書きで挙げてください。",
+      "input": "この掃除機は重さ1.2キロで、片手でも扱えます。運転音は55デシベルと静かで、集じん容積は0.6リットルです。充電は2時間で完了し、標準モードなら40分使えます。"
+    }
+  ]
+}
