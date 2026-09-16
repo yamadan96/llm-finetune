@@ -94,6 +94,7 @@ class ExampleInfo:
     context_used: str
     context_truncated: bool
     response_truncated: bool
+    response_tokens: int
 
 
 def _token_ids(tokenizer: PreTrainedTokenizerBase, text: str) -> list[int]:
@@ -202,6 +203,7 @@ def build_example_with_info(
         context_used=context_used,
         context_truncated=context_used != context.strip(),
         response_truncated=len(prefix_ids) + len(response_ids) > max_length,
+        response_tokens=len(response_ids),
     )
     return example, info
 
@@ -266,6 +268,8 @@ class InstructionDataset(Dataset):  # pyright: ignore[reportMissingTypeArgument]
         target_examples: int | None = None,
         row_ids: Sequence[int] | None = None,
         row_filter: Callable[[Mapping[str, Any]], bool] | None = None,
+        response_tokens_min: int | None = None,
+        response_tokens_max: int | None = None,
     ) -> None:
         """Tokenize ``rows`` in the given order.
 
@@ -289,6 +293,8 @@ class InstructionDataset(Dataset):  # pyright: ignore[reportMissingTypeArgument]
         self.num_context_truncated = 0
         self.num_response_truncated = 0
         self.num_excluded_response_truncated = 0
+        self.num_excluded_by_length = 0
+        self.response_token_counts: list[int] = []
         for position, row in enumerate(rows):
             if target_examples is not None and len(self.samples) >= target_examples:
                 break
@@ -310,6 +316,16 @@ class InstructionDataset(Dataset):  # pyright: ignore[reportMissingTypeArgument]
             if exclude_response_truncated and info.response_truncated:
                 self.num_excluded_response_truncated += 1
                 continue
+            if (
+                response_tokens_min is not None
+                and info.response_tokens < response_tokens_min
+            ) or (
+                response_tokens_max is not None
+                and info.response_tokens > response_tokens_max
+            ):
+                self.num_excluded_by_length += 1
+                continue
+            self.response_token_counts.append(info.response_tokens)
             if row_ids is not None and position < len(row_ids):
                 self.row_ids.append(int(row_ids[position]))
             self.num_with_context += bool(context.strip())
@@ -338,6 +354,12 @@ class InstructionDataset(Dataset):  # pyright: ignore[reportMissingTypeArgument]
             "skipped_empty": self.num_empty,
             "skipped_truncated": self.num_truncated_away,
             "excluded_response_truncated": self.num_excluded_response_truncated,
+            "excluded_by_length": self.num_excluded_by_length,
+            "median_response_tokens": (
+                sorted(self.response_token_counts)[len(self.response_token_counts) // 2]
+                if self.response_token_counts
+                else 0
+            ),
         }
 
     @classmethod
@@ -360,8 +382,10 @@ class InstructionDataset(Dataset):  # pyright: ignore[reportMissingTypeArgument]
                 "num_context_truncated",
                 "num_response_truncated",
                 "num_excluded_response_truncated",
+                "num_excluded_by_length",
             ):
                 setattr(merged, name, getattr(merged, name) + getattr(part, name))
+            merged.response_token_counts += part.response_token_counts
         return merged
 
     def __len__(self) -> int:
@@ -383,6 +407,8 @@ def load_instruction_datasets(
     train_examples: int | None = None,
     exclude_response_truncated: bool = False,
     list_rows: int | None = None,
+    response_tokens_min: int | None = None,
+    response_tokens_max: int | None = None,
 ) -> tuple[InstructionDataset, InstructionDataset]:
     """Load the raw dataset and build seeded train/validation datasets.
 
@@ -431,6 +457,8 @@ def load_instruction_datasets(
             target_examples=target,
             row_ids=train_idx,
             row_filter=row_filter,
+            response_tokens_min=response_tokens_min,
+            response_tokens_max=response_tokens_max,
         )
 
     def is_list_row(row: Mapping[str, Any]) -> bool:

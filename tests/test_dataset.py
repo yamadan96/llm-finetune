@@ -6,7 +6,6 @@ from src.dataset import (
     CONTEXT_HEADER,
     CONTEXT_TRUNCATION_MARK,
     IGNORE_INDEX,
-    ExampleInfo,
     InstructionDataset,
     build_example,
     build_example_with_info,
@@ -255,7 +254,8 @@ def test_masking_without_context(reversible_tokenizer) -> None:
 
     assert built is not None
     example, info = built
-    assert info == ExampleInfo("", context_truncated=False, response_truncated=False)
+    assert info.context_used == "" and not info.context_truncated
+    assert not info.response_truncated and info.response_tokens > 0
     _check_masking(
         reversible_tokenizer, example, format_prompt_prefix("質問"), "回答です。"
     )
@@ -392,6 +392,8 @@ def test_instruction_dataset_uses_input_field_and_reports_stats(
         "skipped_empty": 1,
         "skipped_truncated": 1,
         "excluded_response_truncated": 0,
+        "excluded_by_length": 0,
+        "median_response_tokens": 3,
     }
     decoded = reversible_tokenizer.decode(dataset[1]["input_ids"])
     assert "補足情報:\n本文<|im_end|>" in decoded
@@ -567,3 +569,53 @@ def test_list_rows_requires_train_examples(reversible_tokenizer, monkeypatch) ->
         _load_list_arm(reversible_tokenizer, monkeypatch, list_rows=5)
     with pytest.raises(ValueError, match="cannot exceed"):
         _load_list_arm(reversible_tokenizer, monkeypatch, train_examples=5, list_rows=6)
+
+
+LENGTH_ROWS = [
+    {
+        "index": i,
+        "instruction": f"q{i}",
+        "input": "",
+        "output": ("長い回答です。" * 6) if i % 3 == 0 else "短い",
+    }
+    for i in range(30)
+]
+
+
+def _load_length_arm(reversible_tokenizer, monkeypatch, **kwargs):
+    import datasets
+
+    monkeypatch.setattr(
+        dataset_module,
+        "load_dataset",
+        lambda dataset_id, split: datasets.Dataset.from_list(LENGTH_ROWS),
+    )
+    return load_instruction_datasets(
+        reversible_tokenizer,
+        dataset_id="org/data",
+        max_length=128,
+        val_ratio=0.1,
+        seed=7,
+        **kwargs,
+    )
+
+
+def test_response_length_filter_selects_long_or_short_answers(
+    reversible_tokenizer, monkeypatch
+) -> None:
+    long_train, long_val = _load_length_arm(
+        reversible_tokenizer, monkeypatch, train_examples=8, response_tokens_min=30
+    )
+    short_train, short_val = _load_length_arm(
+        reversible_tokenizer, monkeypatch, train_examples=8, response_tokens_max=10
+    )
+
+    assert len(long_train) == len(short_train) == 8
+    assert long_train.stats()["median_response_tokens"] >= 30
+    assert short_train.stats()["median_response_tokens"] <= 10
+    assert long_train.stats()["excluded_by_length"] > 0
+    assert short_train.stats()["excluded_by_length"] > 0
+    assert set(long_train.row_ids).isdisjoint(short_train.row_ids)
+    # The filter applies to training only
+    assert long_val.row_ids == short_val.row_ids
+    assert long_val.stats()["excluded_by_length"] == 0
