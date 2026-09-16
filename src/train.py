@@ -104,6 +104,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "left unchanged",
     )
     p.add_argument(
+        "--list-rows",
+        type=int,
+        default=None,
+        help="Force exactly N list-instruction rows among --train-examples "
+        "(the rest are non-list rows from the same seeded order); 0 removes "
+        "list supervision entirely",
+    )
+    p.add_argument(
         "--log-every",
         type=positive_int,
         default=10,
@@ -214,6 +222,7 @@ def run_training(args: argparse.Namespace, tracker: RunTracker) -> None:
         max_val_samples=args.max_val_samples,
         train_examples=args.train_examples,
         exclude_response_truncated=args.exclude_response_truncated,
+        list_rows=args.list_rows,
     )
     if len(train_set) == 0:
         raise ValueError("Training set is empty")

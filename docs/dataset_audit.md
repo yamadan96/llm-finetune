@@ -32,12 +32,13 @@ Prompt tokens: p5=31, p25=37, p50=47, p75=184, p95=582, mean=158.2, max=8990
 
 ## Instructions that ask for a list
 
-- 1577 (10.5%) of usable examples
-- response shape: inline_list 682 (43.2%), marked_list 610 (38.7%), multi_line 222 (14.1%), single_sentence 63 (4.0%)
-- response repeats a line: 8 (0.5%)
-- items per response: p50=5, p95=15
-- instructions that ask for a specific number of items: 433 (27.5%); response has exactly that many items 209 (48.3%), fewer 57, more 167, a single sentence 21
-- response tokens: p50=64, p95=268
+- 1136 (7.6%) of usable examples
+- response shape: inline_list 250 (22.0%), marked_list 509 (44.8%), multi_line 149 (13.1%), prose 228 (20.1%)
+- structured (>= 2 items): 908 (79.9%), with duplicate items: 38 (3.3%)
+- response repeats a line: 7 (0.6%)
+- items per response: p50=5, p95=14
+- instructions that ask for a specific number of items: 128 (11.3%); response has exactly that many items 69 (53.9%), fewer 2, more 20, prose 37
+- response tokens: p50=66, p95=265
 
 ## Instructions that ask for a rewrite
 

@@ -500,3 +500,70 @@ def test_load_instruction_datasets_refill_keeps_size_and_records_ids(
     assert set(filtered_train.row_ids) - set(baseline_train.row_ids)
     # Validation is untouched by the training-side filter
     assert baseline_val.row_ids == filtered_val.row_ids
+
+
+LIST_ROWS = [
+    {
+        "index": i,
+        "instruction": "例を3つ挙げてください" if i % 4 == 0 else f"q{i}",
+        "input": "",
+        "output": f"1. A{i}\n2. B{i}\n3. C{i}" if i % 4 == 0 else f"回答{i}",
+    }
+    for i in range(40)
+]
+
+
+def _load_list_arm(reversible_tokenizer, monkeypatch, **kwargs):
+    import datasets
+
+    monkeypatch.setattr(
+        dataset_module,
+        "load_dataset",
+        lambda dataset_id, split: datasets.Dataset.from_list(LIST_ROWS),
+    )
+    return load_instruction_datasets(
+        reversible_tokenizer,
+        dataset_id="org/data",
+        max_length=96,
+        val_ratio=0.1,
+        seed=3,
+        **kwargs,
+    )
+
+
+def test_list_rows_sets_the_amount_of_list_supervision(
+    reversible_tokenizer, monkeypatch
+) -> None:
+    from src.list_rules import is_list_instruction
+
+    by_index = {row["index"]: row for row in LIST_ROWS}
+
+    def count_list(dataset) -> int:
+        return sum(
+            is_list_instruction(by_index[i]["instruction"]) for i in dataset.row_ids
+        )
+
+    as_is, _ = _load_list_arm(reversible_tokenizer, monkeypatch, train_examples=20)
+    rich, _ = _load_list_arm(
+        reversible_tokenizer, monkeypatch, train_examples=20, list_rows=8
+    )
+    none, _ = _load_list_arm(
+        reversible_tokenizer, monkeypatch, train_examples=20, list_rows=0
+    )
+
+    assert len(as_is) == len(rich) == len(none) == 20
+    assert count_list(rich) == 8
+    assert count_list(none) == 0
+    assert 0 < count_list(as_is) < 8
+    # Every arm uses distinct rows; the composed arms are ordered by row id
+    for dataset in (as_is, rich, none):
+        assert len(set(dataset.row_ids)) == len(dataset.row_ids)
+    for dataset in (rich, none):
+        assert dataset.row_ids == sorted(dataset.row_ids)
+
+
+def test_list_rows_requires_train_examples(reversible_tokenizer, monkeypatch) -> None:
+    with pytest.raises(ValueError, match="requires train_examples"):
+        _load_list_arm(reversible_tokenizer, monkeypatch, list_rows=5)
+    with pytest.raises(ValueError, match="cannot exceed"):
+        _load_list_arm(reversible_tokenizer, monkeypatch, train_examples=5, list_rows=6)

@@ -93,6 +93,7 @@ def smoke_run(tmp_path, monkeypatch, fake_tokenizer):
         max_val_samples,
         train_examples,
         exclude_response_truncated,
+        list_rows,
     ):
         datasets_built["train"] = InstructionDataset(tokenizer, ROWS[:6], max_length)
         datasets_built["val"] = InstructionDataset(tokenizer, ROWS[6:], max_length)

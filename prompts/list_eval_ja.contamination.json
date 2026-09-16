@@ -1,0 +1,279 @@
+{
+  "schema_version": 1,
+  "ok": true,
+  "prompts_file": "list_eval_ja.json",
+  "prompts_sha256": "3a35a609cc5c8ec3466fc419c413c1496b7ef4c53b98acf239a6e475b33a4644",
+  "dataset_id": "kunishou/databricks-dolly-15k-ja",
+  "dataset_revision": null,
+  "dataset_rows": 15015,
+  "fields": [
+    "instruction",
+    "input",
+    "output",
+    "instruction+input"
+  ],
+  "normalization": "NFKC, whitespace removed",
+  "thresholds": {
+    "jaccard_char_3gram": 0.5,
+    "containment_char_3gram": 0.8,
+    "min_substring_chars": 20
+  },
+  "results": [
+    {
+      "id": "count-3-benefits",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.2432,
+        "row_index": "1803",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.4167,
+        "row_index": "546",
+        "field": "instruction+input"
+      }
+    },
+    {
+      "id": "count-5-kitchen",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.2326,
+        "row_index": "7878",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.2941,
+        "row_index": "5921",
+        "field": "instruction"
+      }
+    },
+    {
+      "id": "count-4-presentation",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.2308,
+        "row_index": "4524",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.3462,
+        "row_index": "4524",
+        "field": "instruction"
+      }
+    },
+    {
+      "id": "count-6-travel",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.2727,
+        "row_index": "14573",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.4091,
+        "row_index": "14573",
+        "field": "instruction"
+      }
+    },
+    {
+      "id": "count-3-bug",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.1875,
+        "row_index": "1803",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.4,
+        "row_index": "8028",
+        "field": "output"
+      }
+    },
+    {
+      "id": "count-5-onboarding",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.225,
+        "row_index": "6526",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.3333,
+        "row_index": "208",
+        "field": "output"
+      }
+    },
+    {
+      "id": "count-4-savemoney",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.2647,
+        "row_index": "4524",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.4286,
+        "row_index": "546",
+        "field": "instruction+input"
+      }
+    },
+    {
+      "id": "count-3-interview",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.2368,
+        "row_index": "1803",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.36,
+        "row_index": "546",
+        "field": "instruction"
+      }
+    },
+    {
+      "id": "open-cafe-checks",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.2222,
+        "row_index": "13702",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.3636,
+        "row_index": "1404",
+        "field": "instruction+input"
+      }
+    },
+    {
+      "id": "open-rainy-day",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.3611,
+        "row_index": "14044",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.4643,
+        "row_index": "49",
+        "field": "instruction+input"
+      }
+    },
+    {
+      "id": "open-study-tools",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.2424,
+        "row_index": "9360",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.3333,
+        "row_index": "7500",
+        "field": "instruction"
+      }
+    },
+    {
+      "id": "open-team-rules",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.2353,
+        "row_index": "13702",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.4,
+        "row_index": "13702",
+        "field": "instruction"
+      }
+    },
+    {
+      "id": "extract-tasks",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.0968,
+        "row_index": "13702",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.1456,
+        "row_index": "1502",
+        "field": "input"
+      }
+    },
+    {
+      "id": "extract-ingredients",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.1062,
+        "row_index": "13702",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.2935,
+        "row_index": "4693",
+        "field": "output"
+      }
+    },
+    {
+      "id": "extract-3-dates",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.1059,
+        "row_index": "1803",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.1944,
+        "row_index": "9011",
+        "field": "output"
+      }
+    },
+    {
+      "id": "extract-features",
+      "ok": true,
+      "exact_matches": [],
+      "substring_matches": [],
+      "max_jaccard": {
+        "score": 0.0945,
+        "row_index": "13702",
+        "field": "instruction"
+      },
+      "max_containment": {
+        "score": 0.1415,
+        "row_index": "8652",
+        "field": "instruction+input"
+      }
+    }
+  ]
+}
