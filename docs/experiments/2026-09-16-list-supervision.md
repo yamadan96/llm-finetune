@@ -72,3 +72,58 @@ split into `in_domain` and `retention`, validation loss, runtime, peak VRAM.
 
 Single seed, one epoch, 497 examples: an ordering seen here is evidence about
 this regime, not a general law. Validation loss does not decide the outcome.
+
+---
+
+## Result: NO SUPPORT
+
+Three runs on one RTX A6000 from commit `143c2d8`, each 497 training examples,
+`--lr 5e-5`, identical validation split (`val_row_ids` identical in all arms).
+Composition verified from `config.train_row_ids`: 44 / 132 / 0 list rows, 88
+and 44 rows different from the control.
+
+### Primary endpoints (16-prompt list set)
+
+| arm | answer | structured | exact count (9) | answers with a duplicated item | duplicate items | terminated | median tokens |
+|---|---|---|---|---|---|---|---|
+| base model (identical in all arms) | base | 100% | 67% | 0/16 | 0 | 8/16 | 254 |
+| control (44 list rows) | fine-tuned | 88% | 89% | 7/16 | 30 | 13/16 | 84 |
+| list-rich (132) | fine-tuned | 94% | 89% | 8/16 | 48 | 15/16 | 62 |
+| list-free (0) | fine-tuned | 94% | 100% | 6/16 | 33 | 15/16 | 69 |
+
+The pre-registered ordering (rich >= control >= free) does not appear in any
+endpoint. The arm trained **without a single list instruction** matches or
+beats the arm trained on three times as many: it has the best
+requested-count satisfaction (100%) and the fewest answers with duplicated
+items. 6 of the 16 fine-tuned answers are byte-identical across all three
+arms.
+
+Secondary (20-prompt retention set): validation loss 1.553 in every arm;
+repetition WARNs 2 / 1 / 3; no repetition WARN on the retention prompts in any
+arm; peak reserved VRAM 17.25 GiB everywhere.
+
+### Reading
+
+- **NO SUPPORT** for the quantity hypothesis: at 497 examples and one epoch,
+  how much list supervision the adapter sees does not set list behaviour.
+- The result is stronger than a null: removing list supervision entirely does
+  not produce the collapse, and adding it does not cure it. Whatever damages
+  list answers is carried by the rest of the data.
+- What does change, in every arm, is the shape of an answer: the base model
+  writes 254 median tokens with distinct, explained items and never repeats an
+  item (0/16); after fine-tuning on any composition the answers fall to 62-84
+  median tokens, the items become short templated fragments, and 6-8 answers
+  of 16 repeat an item ("バイザー" five times, "お茶を淹れる" eight times).
+- Fine-tuning does improve two things consistently: the requested item count
+  is met far more often (67% -> 89-100%) and answers stop instead of running
+  into `max_new_tokens` (8/16 -> 13-15/16). The collapse is not "lists get
+  worse in every respect": the model learns to produce N slots and to stop,
+  and fills the slots with a repeated phrase.
+
+### Hypothesis this leaves standing
+
+The failure tracks the global compression of answer length and item
+diversity, not the task mix. The next experiment varies the length
+distribution of the teacher answers (long vs short), holding the number of
+examples and everything else fixed, and asks whether duplicate items and
+answer length follow it.

@@ -7,6 +7,62 @@ question is not "can LoRA lower a loss" but:
 > one specific output structure collapse, which property of the teacher data
 > predicts it, and does that yield a data-selection rule that generalizes?
 
+## Cycle 4 (2026-09-16, after experiment C)
+
+**Current strongest result.** The list collapse is *not* caused by the list
+training data. Holding 497 examples and lr 5e-5 fixed and varying only how
+many list instructions the split contains (0, 44, 132), no list endpoint
+orders with list supervision; the arm with **zero** list examples has the best
+requested-count satisfaction (100%) and the fewest duplicated items. Across
+all arms the same thing happens to every answer: median generated length falls
+from 254 tokens (base) to 62-84, items become short templated fragments and
+6-8 of 16 list answers repeat an item, while the base model repeats none.
+Fine-tuning simultaneously *improves* two behaviours: meeting a requested item
+count (67% -> 89-100%) and terminating before `max_new_tokens` (8/16 ->
+13-15/16).
+
+**What changed scientifically this cycle.** The collapse was re-described. It
+is not "the model cannot produce lists" but "the model produces the right
+number of slots, stops on time, and fills the slots with a repeated short
+phrase". That is a diversity/length failure that happens to be most visible in
+lists, and it is inherited from the whole training distribution rather than
+from list rows.
+
+**Hypotheses killed.**
+- Truncated teacher responses cause the repetition (experiment A, 25 of 497
+  rows replaced, no endpoint moved).
+- The amount of list supervision sets list behaviour (experiment C, doses of
+  88 and 44 rows, no ordering; zero-list arm is not worse).
+- Validation loss tracks generation quality: it is 1.553 in all three arms of
+  experiment C and in both arms of experiment A, while the generations differ
+  visibly.
+
+**Current bottleneck.** We have a candidate mechanism (answer-length and
+item-diversity compression from the dominant short-answer style) but no
+experiment yet that manipulates it directly.
+
+**Next falsifiable experiment.** Experiment D: hold 497 examples, lr and
+everything else fixed, and build the split from long teacher answers only vs
+short teacher answers only (median response length in the dataset is 63
+tokens, so a long arm at >= 120 tokens and a short arm at <= 40 tokens are
+both available in quantity). Endpoints: the same list metrics plus generated
+length; prediction, if the mechanism is length/diversity transfer: the short
+arm collapses harder (more duplicate items, shorter answers), the long arm
+keeps longer and more varied items.
+
+**Why this has the highest information gain.** Length is a property of every
+training row, so the dose is the whole split (100%), the largest available.
+The prediction is directional and the two arms bracket the control, so a null
+result would rule out the last data-side explanation and point at the
+optimization regime (rank, epochs, LoRA scaling) instead of the data.
+
+**Stop / pivot criterion.** If experiment D shows no ordering in duplicate
+items or answer length, stop attributing the collapse to data selection: move
+to the training regime (e.g. rank 4 vs 16 vs 64 at fixed data), and report the
+data-selection conclusion as negative. If D does order, the finding becomes a
+data-selection rule ("select teacher answers by length/diversity, not by task
+mix") and the next step is to test it at 3,000 examples.
+
 ## Cycle 3 (2026-09-16)
 
 **Current strongest result.** A LoRA fine-tune of Qwen2.5-7B-Instruct on 497
