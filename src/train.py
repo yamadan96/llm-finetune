@@ -112,6 +112,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "list supervision entirely",
     )
     p.add_argument(
+        "--response-tokens-min",
+        type=positive_int,
+        default=None,
+        help="Train only on rows whose response has at least N tokens "
+        "(training split only)",
+    )
+    p.add_argument(
+        "--response-tokens-max",
+        type=positive_int,
+        default=None,
+        help="Train only on rows whose response has at most N tokens "
+        "(training split only)",
+    )
+    p.add_argument(
         "--log-every",
         type=positive_int,
         default=10,
@@ -223,6 +237,8 @@ def run_training(args: argparse.Namespace, tracker: RunTracker) -> None:
         train_examples=args.train_examples,
         exclude_response_truncated=args.exclude_response_truncated,
         list_rows=args.list_rows,
+        response_tokens_min=args.response_tokens_min,
+        response_tokens_max=args.response_tokens_max,
     )
     if len(train_set) == 0:
         raise ValueError("Training set is empty")
