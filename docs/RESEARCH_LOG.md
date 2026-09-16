@@ -7,6 +7,52 @@ question is not "can LoRA lower a loss" but:
 > one specific output structure collapse, which property of the teacher data
 > predicts it, and does that yield a data-selection rule that generalizes?
 
+## Cycle 5 (2026-09-17, after experiment D)
+
+**Current strongest result.** The length of the teacher answers controls both
+the length and the repetitiveness of the fine-tuned model. Holding 497
+examples, lr 5e-5 and everything else fixed and selecting the training split by
+response length (median 22 / 67 / 195 tokens), the fine-tuned model's answers
+run 54 / 95 / 132 median tokens and contain 58 / 29 / 26 duplicated list items.
+The same runs separate two things that looked like one failure: training on
+short answers gives the **best** format compliance (100% structured, 100% of
+requested item counts met, 15/16 answers terminating) and the **worst**
+repetition, while long answers give varied content and the worst count
+compliance. Validation loss is worst (1.587) in the arm with the best format
+compliance.
+
+**What changed scientifically this cycle.** The first dose-response in this
+repository, at a dose of 100% of the split. Data selection does move the
+failure, but not through the task mix (experiment C) - through the length
+distribution of the answers. "List collapse" splits into a compliance axis and
+a diversity axis that move in opposite directions.
+
+**Hypotheses killed.** Truncated teacher responses (A); list supervision
+quantity (C); validation loss as a proxy for generation quality (A, C and D
+all dissociate them, D with the sign reversed).
+
+**Current bottleneck.** Length is confounded with content: filtering by length
+also moves the category mix (creative_writing 28 -> 61 rows in the long arm and
+2 in the short arm; closed_qa 61 -> 17 and 100). The causal claim "length, not
+category" is not yet isolated.
+
+**Next falsifiable experiment.** Experiment E: rebuild the long and short arms
+with the control's category distribution (per-category quotas), varying only
+length within each category, as far as the pool allows; report the achieved
+per-category length gap as the dose. Endpoints unchanged.
+
+**Why this has the highest information gain.** It is the only remaining way to
+tell a data-selection rule ("prefer longer teacher answers to avoid repetition,
+shorter ones to buy format compliance") from a restatement of the category
+mix. Either outcome is publishable inside this repository: a surviving
+ordering gives a rule, a vanishing one says category composition is the lever.
+
+**Stop / pivot criterion.** If experiment E cannot reach a per-category length
+gap of at least 2x in the majority of categories, declare the separation
+untestable with this dataset and move to the optimization regime (rank,
+epochs, alpha) with the same endpoints. If E reproduces the ordering, test the
+rule at 3,000 examples before claiming it generalizes.
+
 ## Cycle 4 (2026-09-16, after experiment C)
 
 **Current strongest result.** The list collapse is *not* caused by the list
