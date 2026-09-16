@@ -159,11 +159,20 @@ def judgment_counts(labels: dict[str, str], prompt_ids: list[str]) -> dict[str, 
     return {**counts, "unjudged": len(prompt_ids) - len(labels)}
 
 
+MAX_CELL_CHARS = 60
+
+
 def _fmt(value: Any) -> str:
+    """Table cells stay readable: long lists and dicts are summarized."""
     if value is None:
         return "–"
     if isinstance(value, float):
         return f"{value:.4g}" if abs(value) < 1000 else f"{value:.0f}"
+    if isinstance(value, list):
+        return f"{len(value)} values"
+    if isinstance(value, dict):
+        text = ", ".join(f"{k}={v}" for k, v in value.items())
+        return text if len(text) <= MAX_CELL_CHARS else f"{len(value)} fields"
     return str(value)
 
 

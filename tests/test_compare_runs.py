@@ -146,6 +146,13 @@ def test_compare_runs_rejects_different_prompt_sets(tmp_path, capsys) -> None:
     assert "prompts_sha256" in capsys.readouterr().out
 
 
+def test_table_cells_summarize_long_values() -> None:
+    assert compare_runs._fmt(list(range(100))) == "100 values"
+    assert compare_runs._fmt({"a": 1, "b": 2}) == "a=1, b=2"
+    assert compare_runs._fmt({f"key{i}": i for i in range(9)}) == "9 fields"
+    assert compare_runs._fmt(None) == "–"
+
+
 def test_judgment_counts_rejects_unknown_labels() -> None:
     with pytest.raises(ValueError):
         compare_runs.judgment_counts({"x": "better"}, ["x"])

@@ -67,3 +67,82 @@ prompts is an expected outcome, not a failure of the experiment.
 - Validation loss alone does not decide the outcome: at 2e-4 the lowest
   validation loss came with the worst generations.
 - No full run and no larger-sample pilot follow from this experiment alone.
+
+---
+
+## Result: NO SUPPORT
+
+Runs on one RTX A6000 from commit `13a8abb`, both arms `--lr 5e-5
+--train-examples 497`, control without and A with
+`--exclude-response-truncated`. Artifacts: `checkpoints/expA-control`,
+`checkpoints/expA-filtered`, `checkpoints/expA-sample-diff.json`,
+`checkpoints/expA-comparison.md` on the training machine (not committed).
+
+### Dose of the intervention
+
+| | control | A |
+|---|---|---|
+| training examples | 497 | 497 |
+| of which response cut at 512 | 25 (5.0%) | 0 |
+| rows shared with the other arm | 472 | 472 |
+| rows replaced | – | 25 removed, 25 refilled |
+| validation rows | identical | identical |
+
+So the filter did act on 25 examples, not on a handful: a null result here is
+informative rather than a non-intervention.
+
+### Primary endpoints
+
+| endpoint | control | A |
+|---|---|---|
+| repetition WARNs on fine-tuned outputs | 2 / 20 | 2 / 20 |
+| fine-tuned outputs cut off at `max_new_tokens` | 0 / 20 | 0 / 20 |
+| `list-remote-focus` | 5 identical list items | 4 identical list items (still degenerate) |
+| `list-welcome-party` | 4 identical items | byte-identical output |
+| `compare-tcp-udp` | correct, concise | byte-identical output |
+| `list-pros-cons` | 2+2 points, one false claim, one confused point | 2+2 points, same false claim, cleaner wording |
+
+Secondary: validation loss 1.553 in both arms; train loss over the last three
+logs 1.503 vs 1.512; peak reserved VRAM 17.25 GiB in both; training 139.5 s vs
+138.2 s. 14 of the 20 fine-tuned outputs are byte-identical between the arms.
+
+Manual judgments against the base model (by Claude, not blinded):
+
+| run | scope | improved | degraded | same | mixed |
+|---|---|---|---|---|---|
+| control | all | 4 | 6 | 10 | 0 |
+| A | all | 4 | 5 | 10 | 1 |
+| control | in_domain (13) | 4 | 4 | 5 | 0 |
+| A | in_domain (13) | 4 | 3 | 5 | 1 |
+| control | retention (7) | 0 | 2 | 5 | 0 |
+| A | retention (7) | 0 | 2 | 5 | 0 |
+
+### Reading
+
+- **NO SUPPORT**: removing the 25 training rows whose response was cut, and
+  refilling with non-truncated rows from the same order, left both primary
+  endpoints unchanged and did not change any of the four pre-registered
+  prompts in kind. The single judgment difference (`list-pros-cons`
+  degraded → mixed) is one prompt on an unblinded reading and is not treated
+  as an effect.
+- This says that at 497 examples, teaching answers without a closing
+  `<|im_end|>` is not what drives the repetition and the collapse of list
+  answers. It does not clear truncated rows at larger training sizes, and it
+  is not evidence about any other data-quality hypothesis.
+- Both arms still show the same picture as every earlier pilot: in-domain
+  summarization and context QA improve, list prompts degenerate into repeated
+  items, and the retention probes (rewrite) get worse while arithmetic and
+  deduction stay intact.
+
+### Dose of the next candidates, measured on the same 497 examples
+
+| intervention | rows affected |
+|---|---|
+| B1: teacher response repeats lines or clauses | 2 (0.4%) |
+| B2: list instruction asks for N items, response has a different number | 12 (2.4%) |
+| responses of at most 10 tokens | 34 (6.8%) |
+| list instructions answered with a single sentence | 4 (0.8%) |
+
+B1 cannot be tested at this sample size: two rows is below the resolution of
+this setup. B2 is small but measurable. Any of these either needs a larger
+training sample or a differently framed intervention.
