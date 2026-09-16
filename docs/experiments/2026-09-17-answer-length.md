@@ -69,3 +69,69 @@ recorded median response length of each training split
 If this is NO SUPPORT, the data-selection line of attack is exhausted at this
 scale and the next cycle moves to the optimization regime (LoRA rank, epochs,
 scaling), per the stop criterion in `docs/RESEARCH_LOG.md`.
+
+---
+
+## Result: SUCCESS on the pre-registered endpoints, with a trade-off
+
+Three runs from commit `0c379b8`, 497 training examples each, `--lr 5e-5`,
+identical validation split. Median response length of the training split
+(recorded in `metrics.json`): **22 tokens (short) / 67 (control) / 195
+(long)**, a nine-fold span; 883 and 1,320 rows were skipped by the filters and
+refilled from the same seeded order.
+
+### Primary endpoints (16-prompt list set)
+
+| arm | teacher median tokens | answers with a duplicated item | duplicate items | mean duplicates per answer | median generated tokens |
+|---|---|---|---|---|---|
+| base model | – | 0/16 | 0 | 0.00 | 254 |
+| `expD-short` | 22 | 7/16 | 58 | 3.62 | 54 |
+| `expD-control` | 67 | 6/16 | 29 | 1.81 | 95 |
+| `expD-long` | 195 | 5/16 | 26 | 1.62 | 132 |
+
+All three pre-registered endpoints order with the length of the teacher
+answers, in the predicted direction: generated length follows teacher length
+(54 -> 95 -> 132 median tokens) and repetition volume falls as teacher answers
+get longer (58 -> 29 -> 26 duplicate items).
+
+### The guard rails move the other way
+
+| arm | structured | requested count met (9) | terminated | validation loss |
+|---|---|---|---|---|
+| `expD-short` | 100% | 100% | 15/16 | 1.587 |
+| `expD-control` | 81% | 78% | 13/16 | 1.553 |
+| `expD-long` | 88% | 78% | 12/16 | 1.552 |
+
+Training only on short answers gives the **best** format compliance — every
+answer is a list, every requested count is met, almost every answer stops —
+while doubling the amount of repeated content. Training on long answers gives
+longer, more varied items and the worst count compliance. Validation loss is
+worst exactly where format compliance is best (1.587 for `short`), the third
+dissociation between validation loss and generation behaviour in this
+repository.
+
+Retention prompts: no repetition WARN in any arm (0/7 everywhere); in-domain
+WARNs 2 (control), 3 (long), 1 (short).
+
+### What this does and does not show
+
+- It shows a **dose-response** between the length of the teacher answers and
+  both the length and the repetitiveness of the fine-tuned model's answers,
+  at a dose of 100% of the training split.
+- It does **not** isolate length from content. Filtering by length also shifts
+  the category mix (creative_writing 28 -> 61 rows in `long` and 2 in `short`;
+  closed_qa 61 -> 17 and 100). The number of list instructions stays similar
+  (44 / 31 / 34), and experiment C showed that list supervision does not drive
+  list behaviour, so the confound is about category composition in general,
+  not about list supervision.
+- The failure mode is now separable in two parts: **format compliance** (item
+  counts, structure, stopping) improves with short teacher answers, while
+  **content diversity** degrades with them. "Selecting shorter answers"
+  therefore buys obedience and pays in repetition.
+
+### Next
+
+Experiment E must break the confound: hold the category mix at the control's
+distribution and vary only the answer length within each category, as far as
+the pool allows. If the ordering survives, "select teacher answers by length"
+is a data-selection rule rather than a proxy for task mix.
