@@ -83,20 +83,9 @@ def smoke_run(tmp_path, monkeypatch, fake_tokenizer):
         apply_lora(model, target_modules, rank=rank, alpha=alpha, dropout=dropout)
         return model, fake_tokenizer
 
-    def fake_load_datasets(
-        tokenizer,
-        dataset_id,
-        max_length,
-        val_ratio,
-        seed,
-        max_train_samples,
-        max_val_samples,
-        train_examples,
-        exclude_response_truncated,
-        list_rows,
-        response_tokens_min,
-        response_tokens_max,
-    ):
+    def fake_load_datasets(tokenizer, dataset_id, max_length, **selection):
+        # Selection options are asserted through metrics.json config, not here
+        assert set(selection) >= {"val_ratio", "seed", "train_examples"}
         datasets_built["train"] = InstructionDataset(tokenizer, ROWS[:6], max_length)
         datasets_built["val"] = InstructionDataset(tokenizer, ROWS[6:], max_length)
         return datasets_built["train"], datasets_built["val"]
@@ -265,3 +254,14 @@ def test_train_metrics_contain_no_absolute_paths(tmp_path, smoke_run) -> None:
     assert str(tmp_path) not in lora_config_text
     assert json.loads(lora_config_text)["base_model_id"] == "local:tiny-qwen"
     assert_no_local_details(text, metrics)
+
+
+def test_run_config_records_row_id_file_by_name_only() -> None:
+    args = parse_args(["--train-row-ids", "/tmp/selections/long.json"])
+
+    config = train_module.run_config(args)
+
+    assert config["train_row_ids"] == "long.json"
+    assert all(not isinstance(value, Path) for value in config.values()), (
+        "config must stay JSON serializable"
+    )

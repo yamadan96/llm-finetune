@@ -1,6 +1,7 @@
 """Training script for LoRA fine-tuning of Qwen2.5-7B-Instruct."""
 
 import argparse
+import json
 import logging
 import math
 import os
@@ -126,6 +127,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "(training split only)",
     )
     p.add_argument(
+        "--train-row-ids",
+        type=Path,
+        default=None,
+        help="JSON file with {'row_ids': [...]} produced by "
+        "scripts/select_rows.py; train on exactly those rows",
+    )
+    p.add_argument(
         "--log-every",
         type=positive_int,
         default=10,
@@ -180,6 +188,8 @@ def run_config(args: argparse.Namespace) -> dict[str, Any]:
     return {
         **vars(args),
         "model_id": public_identifier(args.model_id),
+        # A Path is recorded by file name only, never by directory
+        "train_row_ids": args.train_row_ids.name if args.train_row_ids else None,
         "dataset_id": public_identifier(args.dataset_id),
         "target_modules": LORA_TARGET_MODULES,
     }
@@ -239,6 +249,11 @@ def run_training(args: argparse.Namespace, tracker: RunTracker) -> None:
         list_rows=args.list_rows,
         response_tokens_min=args.response_tokens_min,
         response_tokens_max=args.response_tokens_max,
+        train_row_ids=(
+            json.loads(args.train_row_ids.read_text(encoding="utf-8"))["row_ids"]
+            if args.train_row_ids
+            else None
+        ),
     )
     if len(train_set) == 0:
         raise ValueError("Training set is empty")
