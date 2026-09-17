@@ -7,6 +7,60 @@ question is not "can LoRA lower a loss" but:
 > one specific output structure collapse, which property of the teacher data
 > predicts it, and does that yield a data-selection rule that generalizes?
 
+## Cycle 6 (2026-09-17, after experiment E)
+
+**Current strongest result.** Small-data LoRA fine-tuning (497 examples, one
+epoch, Qwen2.5-7B-Instruct) leaves *format* intact and degrades *content
+diversity*: across six arms that differ in task mix, list supervision and
+teacher answer length, every fine-tuned model saturates at about six distinct
+list items (base model: twelve when attempting eight or more), while
+requested-count compliance rises from 67% to 89-100% and termination from 8/16
+to 11-16/16. Teacher answer length transfers to generated length in both
+experiments (46/68/118 median tokens for teacher 6/67/396, category-matched),
+but repetition does **not** follow teacher length: experiment D's ordering was
+a category-composition artifact and reverses once the category mix is held
+fixed.
+
+**What changed scientifically this cycle.** The failure is no longer "list
+collapse". It is a **distinct-item capacity collapse** that becomes visible
+whenever a format demands more slots than the fine-tuned model has distinct
+content for. Two axes are now separated and measured: length (data-controlled,
+dose-response confirmed twice) and diversity (not controlled by any data-side
+manipulation tried so far).
+
+**Hypotheses.** Killed: truncated teacher responses (A); list supervision
+quantity (C); teacher length as the cause of repetition (E falsifies D's
+repetition ordering); validation loss as a behavioural proxy (A, C, D, E).
+Surviving: teacher length -> generated length (SUPPORTED twice). New and
+untested: the diversity collapse is driven by the optimization regime
+(step count, LoRA rank, alpha) rather than by which rows are in the data.
+
+**Biggest confound.** The long arms train on answers that are truncated at
+`--max-length 512` (262 of 497 rows in `expE-long`), so "long teacher answers"
+and "teacher answers without an end" are entangled at high dose; experiment A
+ruled truncation out only at a 25-row dose.
+
+**Next falsifiable experiment (F).** Training dynamics inside a single run:
+snapshot the adapter every 62 optimizer steps (62/124/186/249) and evaluate
+each snapshot with the same list metrics. Prediction if the collapse is
+optimization-driven: distinct-item capacity falls monotonically with steps
+while validation loss also falls, i.e. the dissociation is visible *within*
+one run and does not need any data manipulation.
+
+**Why this has the highest information gain.** It costs one training run plus
+four evaluations, needs no new data design, and discriminates directly between
+"which rows are in the data" (four experiments have now failed to move
+diversity) and "how far the adapter has moved". A monotone fall with steps
+turns the phenomenon into a statement about small-data SFT optimization; a
+flat curve says the collapse is set at the first few steps and points at the
+adapter's capacity or at the loss objective instead.
+
+**Stop / pivot criterion.** If F shows the collapse is already complete at the
+earliest snapshot, pivot to LoRA capacity (rank 4 / 16 / 64 at fixed data and
+steps). If F shows a monotone fall, the next question is whether early
+stopping on a diversity metric recovers the base model's capacity without
+losing the format compliance gains - which would be the publishable rule.
+
 ## Cycle 5 (2026-09-17, after experiment D)
 
 **Current strongest result.** The length of the teacher answers controls both
