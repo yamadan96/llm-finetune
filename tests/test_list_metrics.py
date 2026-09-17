@@ -2,6 +2,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "list_metrics.py"
 
@@ -66,6 +68,19 @@ def test_run_metrics_base_and_finetuned() -> None:
     assert tuned["duplicate_items_total"] == 2
     assert tuned["terminated"] == 2
     assert tuned["shapes"]["prose"] == 1
+
+
+def test_unique_item_metrics() -> None:
+    tuned = list_metrics.run_metrics(SAMPLES, "finetuned_output")
+    base = list_metrics.run_metrics(SAMPLES, "base_output")
+
+    # Fine-tuned: "1. A / 2. A / 3. A" is 3 attempted, 1 unique
+    assert tuned["attempted_items"] == 3 + 1 + 3
+    assert tuned["unique_items"] == 1 + 1 + 3
+    assert tuned["unique_item_rate"] == pytest.approx(5 / 7)
+    assert base["unique_item_rate"] == 1.0
+    # No answer attempts >= 6 items here
+    assert tuned["unique_when_many"] is None
 
 
 def test_answer_metrics_counts_exact_items() -> None:

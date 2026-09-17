@@ -20,6 +20,7 @@ from .dataset import DEFAULT_DATASET, IGNORE_INDEX, load_instruction_datasets
 from .evidence import RunTracker, public_identifier
 from .lora import (
     LORA_CONFIG_FILENAME,
+    LORA_WEIGHTS_FILENAME,
     get_lora_params,
     save_lora_config,
     save_lora_weights,
@@ -134,6 +135,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "scripts/select_rows.py; train on exactly those rows",
     )
     p.add_argument(
+        "--snapshot-every",
+        type=positive_int,
+        default=None,
+        help="Save the adapter and its validation loss every N optimizer steps "
+        "into CHECKPOINT_DIR/step-<N>, for measuring training dynamics",
+    )
+    p.add_argument(
         "--log-every",
         type=positive_int,
         default=10,
@@ -193,6 +201,28 @@ def run_config(args: argparse.Namespace) -> dict[str, Any]:
         "dataset_id": public_identifier(args.dataset_id),
         "target_modules": LORA_TARGET_MODULES,
     }
+
+
+def save_snapshot(
+    model: torch.nn.Module,
+    tokenizer: Any,
+    args: argparse.Namespace,
+    step: int,
+) -> Path:
+    """Write the adapter as it stands after ``step`` optimizer steps."""
+    directory = CHECKPOINT_DIR / f"step-{step}"
+    directory.mkdir(parents=True, exist_ok=True)
+    save_lora_weights(model, str(directory / LORA_WEIGHTS_FILENAME))
+    save_lora_config(
+        directory / LORA_CONFIG_FILENAME,
+        rank=args.rank,
+        alpha=args.alpha,
+        dropout=args.dropout,
+        target_modules=LORA_TARGET_MODULES,
+        base_model_id=args.model_id,
+    )
+    tokenizer.save_pretrained(str(directory))
+    return directory
 
 
 def count_tokens(batch: dict[str, torch.Tensor]) -> tuple[int, int]:
@@ -319,6 +349,20 @@ def run_training(args: argparse.Namespace, tracker: RunTracker) -> None:
                 supervised_tokens=supervised_tokens,
                 input_tokens=input_tokens,
             )
+            step_now = tracker.optimizer_steps
+            if args.snapshot_every and step_now % args.snapshot_every == 0:
+                # Validation loss at the same point, so the dynamics are paired
+                snapshot_val_loss = (
+                    evaluate(model, val_loader) if val_loader is not None else None
+                )
+                model.train()
+                save_snapshot(model, tokenizer, args, step_now)
+                tracker.record_snapshot(step=step_now, val_loss=snapshot_val_loss)
+                logger.info(
+                    "Snapshot at step %d (val_loss=%s)",
+                    step_now,
+                    f"{snapshot_val_loss:.4f}" if snapshot_val_loss else "n/a",
+                )
             if entry is not None:
                 logger.info(
                     "Epoch %d step %d loss=%.4f lr=%.2e",
