@@ -7,6 +7,58 @@ question is not "can LoRA lower a loss" but:
 > one specific output structure collapse, which property of the teacher data
 > predicts it, and does that yield a data-selection rule that generalizes?
 
+## Cycle 7 (2026-09-17, after experiment F)
+
+**Current strongest result.** Inside a single LoRA fine-tuning run (497
+examples, lr 5e-5, 249 steps), validation loss falls monotonically
+(1.5922 -> 1.5617 -> 1.5538 -> 1.5517) while the model's distinct-item rate
+falls monotonically (0.83 -> 0.72 -> 0.67 -> 0.63) and duplicated items more
+than double (15 -> 33). Format compliance is acquired in the first 62 steps
+(89% of requested counts met, 13/16 answers terminating, against 67% and 8/16
+for the base model) and does not improve much afterwards, and answer length
+collapses early (254 -> 83 tokens) and then stays flat. The failure is
+therefore progressive in optimization, not in data selection: the same prompt
+goes from eight distinct items at step 62, to five at step 124, to a sentence
+repeated to the token limit at step 186.
+
+**What changed scientifically this cycle.** The phenomenon is now a *dynamics*
+statement with a paired loss curve: "loss improves, behaviour degrades" is
+demonstrated within one run rather than inferred across runs. It also shows
+that the two behaviours a practitioner cares about have different time
+constants - format compliance saturates early, diversity erodes late - which
+is what makes early stopping a plausible remedy.
+
+**Hypotheses.** Killed: all four data-side explanations (truncation, list
+supervision, teacher length as the cause of repetition, category mix);
+validation loss as a behavioural proxy. Surviving: teacher length -> generated
+length (SUPPORTED twice, established early in training). New: the controlling
+variable is the *magnitude of the adapter update*, which would unify the step
+sweep (F) and the learning-rate sweep (2e-4 / 1e-4 / 5e-5, where the highest
+learning rate gave the worst generations at equal steps).
+
+**Biggest confound.** Steps and update magnitude are not separated yet: F
+varied steps at a fixed learning rate, and the earlier sweep varied the
+learning rate at fixed steps. Both move ||dW||.
+
+**Next falsifiable experiment (G).** Compute ||dW|| = ||(alpha/r) B A|| for
+every adapter already saved (four snapshots of F, the three learning-rate
+arms, the six arms of D and E), evaluate the three learning-rate checkpoints
+on the list set (no training, three short generation runs), and test whether
+the distinct-item rate is a monotone function of ||dW|| across both sweeps.
+
+**Why this has the highest information gain.** It costs no training, reuses
+artifacts, and either unifies two sweeps under one scalar - which turns the
+practical rule into "watch the update norm, not the loss" - or shows that
+steps and magnitude dissociate, which would point at the optimizer path rather
+than its endpoint.
+
+**Stop / pivot criterion.** If the distinct-item rate is monotone in ||dW||
+across both sweeps, the next experiment tests the rule directly: early
+stopping at a fixed ||dW|| budget versus a fixed step count, measured on a
+widened prompt probe with multiple seeds before any claim of generality. If
+||dW|| does not order them, pivot to per-layer analysis (which modules move)
+before any further training.
+
 ## Cycle 6 (2026-09-17, after experiment E)
 
 **Current strongest result.** Small-data LoRA fine-tuning (497 examples, one
