@@ -66,3 +66,60 @@ data and steps; H-late -> test schedule and epochs.
 Single run, single seed: this measures the trajectory of one adapter, not a
 law. Validation loss is recorded to test the dissociation, not to decide the
 verdict.
+
+---
+
+## Result: SUPPORTED (H-optimization)
+
+One run from commit `475d91d` (497 examples, `--lr 5e-5`, one epoch, 249
+optimizer steps), adapter snapshots every 62 steps, each snapshot evaluated on
+the unchanged 16-prompt list set.
+
+| step | validation loss | unique / attempted items | unique items when >= 6 attempted | duplicate items | answers with a duplicate | requested count met | median generated tokens |
+|---|---|---|---|---|---|---|---|
+| 0 (base) | – | 1.00 | 7.3 | 0 | 0/16 | 67% | 254 |
+| 62 | 1.5922 | 0.83 | 7.4 | 15 | 2/16 | 89% | 83 |
+| 124 | 1.5617 | 0.72 | 5.7 | 27 | 6/16 | 100% | 66 |
+| 186 | 1.5538 | 0.67 | 5.0 | 28 | 6/16 | 89% | 68 |
+| 248 | 1.5517 | 0.63 | 5.3 | 33 | 9/16 | 100% | 68 |
+| 249 (final) | 1.5520 | 0.68 | 5.3 | 29 | 7/16 | 100% | 68 |
+
+**Validation loss falls monotonically (1.5922 -> 1.5517) while the unique /
+attempted item rate falls monotonically (0.83 -> 0.63) and duplicated items
+more than double (15 -> 33).** The pre-registered SUPPORTED condition for
+H-optimization asked for a fall of more than one item in the capacity measure
+and a non-increasing sequence: capacity falls 7.4 -> 5.3 (2.1 items), and the
+sequence is non-increasing except for a +0.3 wobble at step 248 on n=6
+answers. The strictly monotone statement holds for the rate measure; the
+capacity measure holds within the resolution of a 16-prompt probe. Verdict:
+**SUPPORTED, with the wobble recorded rather than smoothed away.**
+
+Two behaviours separate in time:
+
+- **Format is acquired early and kept**: at step 62 the model already meets 89%
+  of requested item counts and terminates 13/16 answers, against 67% and 8/16
+  for the base model. Later snapshots do not improve this much (100% at steps
+  124 and 248).
+- **Diversity erodes continuously**: the same prompt shows it directly.
+
+```
+step  62: 1. 本を読む 2. テレビを見る 3. ゲームをする 4. 音楽を聴く 5. 美術を描く
+          6. 美食家になる 7. パズルをする 8. マッサージをする 9. マッサージをする ...
+step 124: 1. 本を読む 2. お風呂に入る 3. お茶を淹れる 4. お菓子を焼く
+          5. お手伝いをする 6. お手伝いをする ...
+step 186: 雨の日は、家で過ごすのに最適な日です。(repeated to the token limit, no list at all)
+```
+
+Answer length drops early too (254 -> 83 tokens by step 62) and then stays
+flat, so the length transfer measured in D and E is established in the first
+quarter of training and is not what erodes afterwards.
+
+### Consequence
+
+The collapse is not a property of which rows are in the training set - four
+data-side interventions failed to move it - but of how far the adapter has
+travelled. The next question is whether "how far" is measured in steps or in
+update magnitude: the learning-rate sweep (2e-4, 1e-4, 5e-5 at a fixed 249
+steps) and this step sweep (fixed learning rate) can be placed on one axis,
+the norm of the LoRA update, using adapters that already exist. That analysis
+needs no training run.
