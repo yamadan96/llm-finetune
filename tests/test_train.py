@@ -265,3 +265,45 @@ def test_run_config_records_row_id_file_by_name_only() -> None:
     assert all(not isinstance(value, Path) for value in config.values()), (
         "config must stay JSON serializable"
     )
+
+
+def test_train_writes_adapter_snapshots_with_paired_val_loss(
+    tmp_path, smoke_run
+) -> None:
+    metrics = smoke_run("--snapshot-every", "2")
+
+    snapshots = metrics["snapshots"]
+    assert [s["step"] for s in snapshots] == [2, 4, 6]
+    assert all(s["val_loss"] is not None for s in snapshots)
+    assert all(s["seconds"] >= 0 for s in snapshots)
+    for step in (2, 4, 6):
+        directory = train_module.CHECKPOINT_DIR / f"step-{step}"
+        assert (directory / "lora_weights.pt").exists()
+        assert load_lora_config(directory / LORA_CONFIG_FILENAME)["rank"] == 4
+    # The final checkpoint is still written at the top level
+    assert (train_module.CHECKPOINT_DIR / "lora_weights.pt").exists()
+
+
+def test_train_without_snapshot_flag_writes_none(smoke_run) -> None:
+    metrics = smoke_run()
+
+    assert metrics["snapshots"] == []
+    assert not list(train_module.CHECKPOINT_DIR.glob("step-*"))
+
+
+def test_snapshot_adapters_differ_from_each_other(tmp_path, smoke_run) -> None:
+    import torch
+
+    smoke_run("--snapshot-every", "2")
+
+    early = torch.load(
+        train_module.CHECKPOINT_DIR / "step-2" / "lora_weights.pt", weights_only=True
+    )
+    late = torch.load(
+        train_module.CHECKPOINT_DIR / "step-6" / "lora_weights.pt", weights_only=True
+    )
+
+    assert set(early) == set(late)
+    assert any(not torch.equal(early[k], late[k]) for k in early), (
+        "snapshots must capture different training states"
+    )

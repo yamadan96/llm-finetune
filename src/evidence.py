@@ -258,6 +258,7 @@ class RunTracker:
             "epochs": [],
             "best": None,
             "train_loss_steps": [],
+            "snapshots": [],
             "runtime": {},
             "memory": {},
         }
@@ -345,6 +346,17 @@ class RunTracker:
         self.metrics["train_loss_steps"].append(entry)
         self.write()
         return entry
+
+    def record_snapshot(self, *, step: int, val_loss: float | None) -> None:
+        """Record an adapter snapshot taken mid-run (see --snapshot-every)."""
+        self.metrics["snapshots"].append(
+            {
+                "step": step,
+                "val_loss": _json_safe_float(val_loss),
+                "seconds": self._now() - self._start,
+            }
+        )
+        self.write()
 
     def end_epoch_training(self) -> None:
         """Mark the end of the training phase of the current epoch."""

@@ -30,6 +30,10 @@ from typing import Any
 
 from src.list_rules import duplicate_items, response_items
 
+# "How many distinct items can the model still produce?" is measured on answers
+# that attempt at least this many items
+MANY_ITEMS = 6
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="List-behaviour metrics per run")
@@ -46,6 +50,7 @@ def answer_metrics(instruction_items: int | None, answer: str) -> dict[str, Any]
     return {
         "shape": shape,
         "items": len(items),
+        "unique_items": len(set(items)),
         "structured": structured,
         "duplicates": duplicates,
         "exact_count": (
@@ -62,6 +67,9 @@ def run_metrics(samples: dict[str, Any], key: str) -> dict[str, Any]:
     per_prompt = [
         answer_metrics(sample.get("expected_items"), sample[key]) for sample in items
     ]
+    attempted = [m["items"] for m in per_prompt]
+    unique = [m["unique_items"] for m in per_prompt]
+    many = [u for a, u in zip(attempted, unique, strict=True) if a >= MANY_ITEMS]
     with_count = [m for m in per_prompt if m["exact_count"] is not None]
     lengths = sorted(sample[token_key] for sample in items)
     return {
@@ -78,7 +86,12 @@ def run_metrics(samples: dict[str, Any], key: str) -> dict[str, Any]:
         "answers_with_duplicates": sum(m["duplicates"] > 0 for m in per_prompt),
         "duplicate_items_total": sum(m["duplicates"] for m in per_prompt),
         "terminated": sum(sample[token_key] < max_new for sample in items),
-        "median_items": sorted(m["items"] for m in per_prompt)[len(per_prompt) // 2],
+        "median_items": sorted(attempted)[len(per_prompt) // 2],
+        "unique_items": sum(unique),
+        "attempted_items": sum(attempted),
+        "unique_item_rate": sum(unique) / sum(attempted) if sum(attempted) else None,
+        "unique_when_many": sum(many) / len(many) if many else None,
+        "answers_attempting_many": len(many),
         "median_new_tokens": lengths[len(lengths) // 2],
         "shapes": {
             shape: sum(m["shape"] == shape for m in per_prompt)
@@ -100,6 +113,8 @@ def consistency_problems(runs: list[dict[str, Any]]) -> list[str]:
 def render(runs: list[dict[str, Any]]) -> str:
     columns = [
         ("structured_rate", "structured"),
+        ("unique_item_rate", "unique items"),
+        ("unique_when_many", f"unique when >= {MANY_ITEMS} attempted"),
         ("exact_count_rate", "exact count"),
         ("answers_with_duplicates", "answers with duplicates"),
         ("duplicate_items_total", "duplicate items"),
@@ -129,6 +144,12 @@ def render(runs: list[dict[str, Any]]) -> str:
                 value = metrics[key]
                 if key.endswith("_rate"):
                     cells.append("–" if value is None else f"{value:.0%}")
+                elif key == "unique_when_many":
+                    cells.append(
+                        "–"
+                        if value is None
+                        else f"{value:.1f} (n={metrics['answers_attempting_many']})"
+                    )
                 elif key in {"answers_with_duplicates", "terminated"}:
                     cells.append(f"{value}/{metrics['prompts']}")
                 else:
