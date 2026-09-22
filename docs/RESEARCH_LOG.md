@@ -7,6 +7,55 @@ question is not "can LoRA lower a loss" but:
 > one specific output structure collapse, which property of the teacher data
 > predicts it, and does that yield a data-selection rule that generalizes?
 
+## Cycle 8 (2026-09-17, after experiment G)
+
+**Current strongest result.** Unchanged from cycle 7 (loss improves while
+diversity collapses inside one run), now with a boundary on the explanation:
+the magnitude of the LoRA update does **not** control the collapse. Across ten
+adapters at equal rank and alpha, the Spearman correlation between ||dW|| and
+the unique/attempted item rate is -0.53 pooled: perfect (-1.00) within one
+training trajectory, absent (-0.50) across learning rates and reversed (+0.50)
+across data compositions. The learning rate with the largest update (2e-4,
+||dW|| = 30.6) is *more* diverse than 1e-4 (0.55 vs 0.44), and `expE-short`
+reaches 0.87 at the same norm as its control's 0.66.
+
+**What changed scientifically this cycle.** A scalar summary of the adapter is
+ruled out, at no GPU cost. It also resurfaced a data effect that experiment E
+had recorded but cycle 6 under-weighted: at matched update magnitude, teacher
+answer length still changes diversity (0.87 vs 0.66 unique rate, 10 vs 30
+duplicated items) - so both the optimization trajectory and the data
+composition move diversity, and neither is captured by ||dW|| or by validation
+loss.
+
+**Hypotheses.** Killed: update magnitude as the controlling variable (G);
+plus everything killed earlier. Surviving: diversity erodes with optimization
+within a trajectory (F); teacher answer length moves both generated length and
+diversity at matched movement (E, re-weighted); format compliance is acquired
+early and cheaply (F).
+
+**Biggest confound.** Every conclusion rests on a 16-prompt probe with one
+seed. The E-short vs control difference (0.87 vs 0.66) is the largest data
+effect measured so far and has not been replicated.
+
+**Next falsifiable experiment (H).** Two CPU analyses over existing artifacts:
+(a) effective rank / spectral concentration of dW per layer for the same ten
+adapters, testing whether generation diversity mirrors the adapter's spectral
+collapse; (b) lexical diversity of the teacher answers in each saved selection
+(type-token ratio, distinct-2), testing whether the data-side effect at
+matched norm is predicted by the diversity of the answers rather than their
+length.
+
+**Why this has the highest information gain.** Both are free, both are
+falsifiable, and together they separate "the adapter collapses structurally"
+from "the data teaches low-diversity answers". Whichever survives selects the
+next GPU experiment: a rank/alpha sweep, or a diversity-matched data
+selection.
+
+**Stop / pivot criterion.** If neither analysis shows an ordering, stop
+looking for static predictors and measure the generation process directly
+(token entropy and EOS probability per step across snapshots), which needs GPU
+but is the last untested mechanism.
+
 ## Cycle 7 (2026-09-17, after experiment F)
 
 **Current strongest result.** Inside a single LoRA fine-tuning run (497
